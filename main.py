@@ -13,7 +13,7 @@ def main():
             'basic': False,
             'orderflow': True,
             'impact': False,
-            'volatility': False,
+            'volatility': True,
             'path_shape': False,
             'tail': False,
             'bucketed_flow': {
@@ -55,11 +55,11 @@ def main():
     # 文件路径
     bar_type = 'time'
     time_interval = '1h'
-    
+    crypto = 'ETHUSDT'
     # 原始数据路径配置
     data_base_path = '/Volumes/Ext-Disk/data/futures/um'
-    daily_data_template = f'{data_base_path}/daily/trades/ETHUSDT/ETHUSDT-trades-{{date}}.{{ext}}'
-    monthly_data_template = f'{data_base_path}/monthly/trades/ETHUSDT/ETHUSDT-trades-{{month}}.{{ext}}'
+    daily_data_template = f'{data_base_path}/daily/trades/{crypto}/{crypto}-trades-{{date}}.{{ext}}'
+    monthly_data_template = f'{data_base_path}/monthly/trades/{crypto}/{crypto}-trades-{{month}}.{{ext}}'
     
     # Bars 缓存路径（放在 output 目录）
     output_base_path = '/Users/aming/project/python/crypto-trade/output'
@@ -72,6 +72,9 @@ def main():
         cache_key = f'{start_date}-{end_date}-{dollar_threshold_str}'
     
     bar_cache_template = f'{output_base_path}/bars-{cache_key}.{{ext}}'
+    
+    # 🔥 生成 bars_with_features 保存路径
+    bars_with_features_save_path = f'{data_base_path}/{crypto}/bars_with_features-{cache_key}.feather'
     
     # 创建管道
     pipeline = TradingPipeline(config)
@@ -87,6 +90,7 @@ def main():
         'time_freq': time_interval,     # 1小时间隔
         'dollar_threshold': dollar_threshold,
         'bar_cache_template': bar_cache_template,
+        'bars_with_features_save_path': bars_with_features_save_path,  # 🔥 保存 bars_with_features
         'feature_window_bars': 10,
         
         # 🔥 新增：Bar 级滚动统计配置

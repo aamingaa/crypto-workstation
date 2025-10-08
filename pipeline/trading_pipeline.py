@@ -342,7 +342,8 @@ class TradingPipeline:
                         feature_window_bars: int = 10,
                         enable_rolling_stats: bool = True,
                         rolling_window_bars: int = 24,
-                        enable_window_features: bool = False) -> Tuple[pd.DataFrame, pd.DataFrame]:
+                        enable_window_features: bool = False,
+                        bars_with_features_save_path: Optional[str] = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """提取特征和标签
         
         参数:
@@ -350,6 +351,7 @@ class TradingPipeline:
             enable_rolling_stats: 是否启用 bar 级滚动统计（默认True）
             rolling_window_bars: bar 级滚动统计窗口（默认24个bar）
             enable_window_features: 是否启用原有的窗口级特征（默认False，因为会与滚动统计重复）
+            bars_with_features_save_path: bars_with_features 保存路径（可选）
         """
         # 检查是否已经有缓存的 trades_context（来自 build_bars）
         if not hasattr(self, 'trades_context') or self.trades_context is None:
@@ -395,6 +397,21 @@ class TradingPipeline:
             bar_level_features = pd.DataFrame(bar_features_list).set_index('bar_id')
             self.bar_level_features = bar_level_features
             print(f"✓ 完成 bar 级特征提取，共 {len(bar_level_features.columns)} 个特征")
+            
+            # 🔥 将 bar_level_features 与 bars 按 bar_id 拼接，避免重复索引查找
+            print("→ 拼接 bar 级特征与 bars 数据...")
+            bars_with_features = bars.join(bar_level_features, on='bar_id', how='inner')
+            print(f"✓ 拼接完成，共 {len(bars_with_features)} 个 bars，{len(bars_with_features.columns)} 个列")
+            
+            # 🔥 保存 bars_with_features 为 feather 格式
+            if bars_with_features_save_path:
+                print(f"→ 保存 bars_with_features 到: {bars_with_features_save_path}")
+                os.makedirs(os.path.dirname(bars_with_features_save_path), exist_ok=True)
+                bars_with_features.to_feather(bars_with_features_save_path)
+                print(f"✓ 保存完成")
+        else:
+            # 如果没有启用滚动统计，直接使用 bars
+            bars_with_features = bars
         
         # ========== 步骤2：提取窗口级特征（可选的原有逐笔聚合 + 新增滚动统计） ==========
         print("步骤2: 提取窗口级特征...")
@@ -440,7 +457,7 @@ class TradingPipeline:
             # B. 新增的 bar 级滚动统计特征
             if enable_rolling_stats and bar_id >= rolling_window_bars:
                 rolling_feats = self.rolling_aggregator.extract_rolling_statistics(
-                    bar_level_features, 
+                    bars_with_features,  # 使用拼接后的数据
                     window=rolling_window_bars,
                     current_idx=bar_id
                 )
@@ -599,7 +616,8 @@ class TradingPipeline:
             feature_window_bars=feature_window_bars,
             enable_rolling_stats=enable_rolling_stats,
             rolling_window_bars=rolling_window_bars,
-            enable_window_features=enable_window_features
+            enable_window_features=enable_window_features,
+            bars_with_features_save_path=kwargs.get('bars_with_features_save_path')
         )
         print(f"提取了{len(X)}个样本，{len(X.columns)}个特征")
         
