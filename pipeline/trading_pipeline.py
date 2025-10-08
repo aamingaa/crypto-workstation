@@ -15,7 +15,7 @@ from data.time_bars import TimeBarBuilder
 from features.microstructure_extractor import MicrostructureFeatureExtractor
 from ml.models import ModelFactory
 from ml.validators import PurgedBarValidator
-from utils.visualization import TradingVisualizer
+# from utils.visualization import TradingVisualizer
 
 
 class TradingPipeline:
@@ -69,7 +69,7 @@ class TradingPipeline:
         self.feature_extractor = MicrostructureFeatureExtractor(
             self.config_manager.get_config('features')
         )
-        self.visualizer = TradingVisualizer()
+        # self.visualizer = TradingVisualizer()
         
         # 运行时数据
         self.trades_context = None
@@ -476,20 +476,20 @@ class TradingPipeline:
         target_col = f'log_return_5'  # 假设使用5期作为目标
         y_true = self.labels[target_col].loc[predictions.index]
         
-        self.visualizer.plot_predictions_vs_truth(
-            predictions, y_true, 
-            title="预测值 vs 真实值",
-            save_path=os.path.join(save_dir, "predictions_vs_truth.png") if save_dir else None
-        )
+        # self.visualizer.plot_predictions_vs_truth(
+        #     predictions, y_true, 
+        #     title="预测值 vs 真实值",
+        #     save_path=os.path.join(save_dir, "predictions_vs_truth.png") if save_dir else None
+        # )
         
         # 绘制特征重要性
         if hasattr(self.model, 'get_feature_importance'):
             importance = self.model.get_feature_importance()
-            self.visualizer.plot_feature_importance(
-                importance,
-                title="特征重要性",
-                save_path=os.path.join(save_dir, "feature_importance.png") if save_dir else None
-            )
+            # self.visualizer.plot_feature_importance(
+            #     importance,
+            #     title="特征重要性",
+            #     save_path=os.path.join(save_dir, "feature_importance.png") if save_dir else None
+            # )
     
     def run_full_pipeline(self, **kwargs) -> Dict:
         """运行完整的分析管道"""
