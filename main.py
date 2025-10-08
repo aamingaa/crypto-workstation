@@ -17,7 +17,7 @@ def main():
             'path_shape': False,
             'tail': False,
             'bucketed_flow': {
-                'enabled': True,
+                'enabled': False,
                 'low_q': 0.2,
                 'high_q': 0.8,
                 'lag': 1,
@@ -29,7 +29,7 @@ def main():
             'random_state': 42
         },
         'data': {
-            'load_mode': 'auto',  # 'daily', 'monthly', 'auto'（自动选择最优方案）
+            'load_mode': 'daily',  # 'daily', 'monthly', 'auto'（自动选择最优方案）
             'prefer_feather': True  # 优先使用 feather 格式
         }
     }
@@ -84,10 +84,16 @@ def main():
             'monthly_data_template': monthly_data_template
         },
         'bar_type': bar_type,           # 使用时间条
-        'time_interval': time_interval,        # 1小时间隔
+        'time_freq': time_interval,     # 1小时间隔
         'dollar_threshold': dollar_threshold,
         'bar_cache_template': bar_cache_template,
         'feature_window_bars': 10,
+        
+        # 🔥 新增：Bar 级滚动统计配置
+        'enable_rolling_stats': True,      # 启用滚动统计特征
+        'rolling_window_bars': 24,         # 滚动窗口：24小时
+        'enable_window_features': False,   # ⚠️ 关闭原有窗口特征（避免与滚动统计重复）
+        'load_mode' : 'daily',
         'model_type': 'linear',
         'target_horizon': 5,
         'n_splits': 5,
@@ -124,6 +130,14 @@ def main():
         print(f"样本数量: {len(results['features'])}")
         print(f"特征数量: {len(results['features'].columns)}")
         print(f"Bar数量: {len(results['bars'])}")
+        
+        # 查看滚动统计特征
+        rolling_features = [col for col in results['features'].columns if '_w24_' in col or '_w' in col and '_mean' in col]
+        if rolling_features:
+            print(f"\n滚动统计特征数量: {len(rolling_features)}")
+            print(f"示例滚动统计特征（前10个）:")
+            for i, feat in enumerate(rolling_features[:10], 1):
+                print(f"  {i:2d}. {feat}")
         
         return results
         

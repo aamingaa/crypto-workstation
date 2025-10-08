@@ -13,6 +13,7 @@ from data.dollar_bars import DollarBarBuilder
 from data.time_bars import TimeBarBuilder
 # from features import MicrostructureFeatureExtractor
 from features.microstructure_extractor import MicrostructureFeatureExtractor
+from features.rolling_aggregator import RollingAggregator
 from ml.models import ModelFactory
 from ml.validators import PurgedBarValidator
 # from utils.visualization import TradingVisualizer
@@ -69,6 +70,8 @@ class TradingPipeline:
         self.feature_extractor = MicrostructureFeatureExtractor(
             self.config_manager.get_config('features')
         )
+        # 🔥 传入 feature_extractor，让 rolling_aggregator 复用现有特征提取器
+        self.rolling_aggregator = RollingAggregator(feature_extractor=self.feature_extractor)
         # self.visualizer = TradingVisualizer()
         
         # 运行时数据
@@ -78,6 +81,7 @@ class TradingPipeline:
         self.labels = None
         self.model = None
         self.evaluation_results = None
+        self.bar_level_features = None  # 缓存 bar 级特征
     
     def load_data(self, trades_data: Optional[pd.DataFrame] = None,
                   date_range: Optional[Tuple[str, str]] = None,
@@ -335,18 +339,24 @@ class TradingPipeline:
         return bars
     
     def extract_features(self, trades_df: pd.DataFrame, bars: pd.DataFrame,
-                        feature_window_bars: int = 10) -> Tuple[pd.DataFrame, pd.DataFrame]:
-        """提取特征和标签"""
+                        feature_window_bars: int = 10,
+                        enable_rolling_stats: bool = True,
+                        rolling_window_bars: int = 24,
+                        enable_window_features: bool = False) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """提取特征和标签
+        
+        参数:
+            feature_window_bars: 逐笔级特征提取窗口（默认10个bar）
+            enable_rolling_stats: 是否启用 bar 级滚动统计（默认True）
+            rolling_window_bars: bar 级滚动统计窗口（默认24个bar）
+            enable_window_features: 是否启用原有的窗口级特征（默认False，因为会与滚动统计重复）
+        """
         # 检查是否已经有缓存的 trades_context（来自 build_bars）
         if not hasattr(self, 'trades_context') or self.trades_context is None:
             print("构建交易上下文...")
             self.trades_context = self.trades_processor.build_context(trades_df)
         else:
             print("✓ 使用已缓存的交易上下文（避免重复处理）")
-        
-        print("提取特征...")
-        features_list = []
-        labels_list = []
         
         bars = bars.reset_index(drop=True)
         bars['bar_id'] = bars.index
@@ -367,30 +377,81 @@ class TradingPipeline:
             labels_df[f't0_time_{horizon}'] = end_times
             labels_df[f'tH_time_{horizon}'] = end_times.shift(-horizon)
         
-        # 提取特征
+        # ========== 步骤1：提取每个 bar 的独立特征（用于滚动统计） ==========
+        if enable_rolling_stats:
+            print("步骤1: 提取每个 bar 的独立特征...")
+            bar_features_list = []
+            
+            for idx in range(len(bars)):
+                bar_feats = self.rolling_aggregator.extract_bar_level_features(
+                    bars, self.trades_context, idx
+                )
+                bar_feats['bar_id'] = idx
+                bar_features_list.append(bar_feats)
+                
+                if (idx + 1) % 100 == 0:
+                    print(f"  已处理 {idx + 1}/{len(bars)} 个 bars")
+            
+            bar_level_features = pd.DataFrame(bar_features_list).set_index('bar_id')
+            self.bar_level_features = bar_level_features
+            print(f"✓ 完成 bar 级特征提取，共 {len(bar_level_features.columns)} 个特征")
+        
+        # ========== 步骤2：提取窗口级特征（可选的原有逐笔聚合 + 新增滚动统计） ==========
+        print("步骤2: 提取窗口级特征...")
+        features_list = []
+        
         idx = 1
         for bar_id in close_prices.index:
-            bar_window_start_idx = bar_id - feature_window_bars
-            if bar_window_start_idx < 0:
+            # 初始化特征字典
+            features = {}
+            
+            # 确定特征窗口的时间范围（用于记录）
+            if enable_rolling_stats and bar_id >= rolling_window_bars:
+                # 滚动统计的时间范围
+                window_start_idx = bar_id - rolling_window_bars
+                window_end_idx = bar_id - 1
+            elif enable_window_features and bar_id >= feature_window_bars:
+                # 窗口特征的时间范围
+                window_start_idx = bar_id - feature_window_bars
+                window_end_idx = bar_id - 1
+            else:
+                # 窗口不足，跳过
                 continue
             
-            bar_window_end_idx = bar_id - 1
+            feature_start_ts = bars.loc[window_start_idx, 'start_time']
+            feature_end_ts = bars.loc[window_end_idx, 'end_time']
             
-            feature_start_ts = bars.loc[bar_window_start_idx, 'start_time']
-            feature_end_ts = bars.loc[bar_window_end_idx, 'end_time']
+            # A. 原有的逐笔级微观结构特征（窗口内一次性聚合）- 可选
+            # if enable_window_features:
+            #     bar_window_start_idx = bar_id - feature_window_bars
+            #     bar_window_end_idx = bar_id - 1
+                
+            #     window_features = self.feature_extractor.extract_from_context(
+            #         ctx=self.trades_context,
+            #         start_ts=bars.loc[bar_window_start_idx, 'start_time'],
+            #         end_ts=bars.loc[bar_window_end_idx, 'end_time'],
+            #         bars=bars,
+            #         bar_window_start_idx=bar_window_start_idx,
+            #         bar_window_end_idx=bar_window_end_idx
+            #     )
+            #     # 添加前缀以区分窗口特征
+            #     features.update({f'window_{k}': v for k, v in window_features.items()})
             
-            # 提取微观结构特征
-            features = self.feature_extractor.extract_from_context(
-                ctx=self.trades_context,
-                start_ts=feature_start_ts,
-                end_ts=feature_end_ts,
-                bars=bars,
-                bar_window_start_idx=bar_window_start_idx,
-                bar_window_end_idx=bar_window_end_idx
-            )
+            # B. 新增的 bar 级滚动统计特征
+            if enable_rolling_stats and bar_id >= rolling_window_bars:
+                rolling_feats = self.rolling_aggregator.extract_rolling_statistics(
+                    bar_level_features, 
+                    window=rolling_window_bars,
+                    current_idx=bar_id
+                )
+                features.update(rolling_feats)
+            
+            # 如果两种特征都未启用，跳过该 bar
+            if not features:
+                continue
             
             if idx % 100 == 0:
-                print(f"处理进度: {idx}/{len(close_prices.index)}")
+                print(f"  处理进度: {idx}/{len(close_prices.index)}")
             idx += 1
             
             features['bar_id'] = bar_id
@@ -403,6 +464,8 @@ class TradingPipeline:
         # 构建特征DataFrame
         X = pd.DataFrame(features_list).set_index('bar_id')
         y = labels_df.loc[X.index]
+        
+        print(f"✓ 原始特征数量: {len(X.columns)}")
         
         # 过滤无效数据（分步处理，确保 X 和 y 严格对齐）
         # 步骤 1: 过滤 y 中所有 log_return 列的无效值
@@ -421,6 +484,8 @@ class TradingPipeline:
         x_valid_mask = ~X.isna().any(axis=1)
         X = X.loc[x_valid_mask]
         y = y.loc[x_valid_mask]
+        
+        print(f"✓ 过滤后特征数量: {len(X.columns)}, 样本数: {len(X)}")
         
         self.features = X
         self.labels = y
@@ -503,6 +568,8 @@ class TradingPipeline:
             self.config_manager.set_config('features', feat_cfg)
             # 重建特征提取器
             self.feature_extractor = MicrostructureFeatureExtractor(feat_cfg)
+            # 🔥 同步更新 rolling_aggregator 的 feature_extractor
+            self.rolling_aggregator.feature_extractor = self.feature_extractor
         # 加载数据
         trades_df = self.load_data(**kwargs.get('data_config', {}))
         print(f"加载了{len(trades_df)}条交易记录")
@@ -522,7 +589,18 @@ class TradingPipeline:
         
         # 提取特征
         feature_window_bars = kwargs.get('feature_window_bars', 10)
-        X, y = self.extract_features(trades_df, bars, feature_window_bars)
+        enable_rolling_stats = kwargs.get('enable_rolling_stats', True)
+        rolling_window_bars = kwargs.get('rolling_window_bars', 24)
+        enable_window_features = kwargs.get('enable_window_features', False)  # 默认关闭窗口特征
+        
+        X, y = self.extract_features(
+            trades_df, 
+            bars, 
+            feature_window_bars=feature_window_bars,
+            enable_rolling_stats=enable_rolling_stats,
+            rolling_window_bars=rolling_window_bars,
+            enable_window_features=enable_window_features
+        )
         print(f"提取了{len(X)}个样本，{len(X.columns)}个特征")
         
         # 训练评估
