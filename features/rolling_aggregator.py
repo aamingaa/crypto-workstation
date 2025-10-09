@@ -202,8 +202,8 @@ class RollingAggregator:
         
         # 🔥 自动识别所有 bar_ 开头的数值特征（而不是硬编码列表）
         stat_features = [col for col in window_data.columns 
-                        if col.startswith('bar_') and 
-                        pd.api.types.is_numeric_dtype(window_data[col])]
+                        if col.startswith('bar_') and col != 'bar_id'
+                        and pd.api.types.is_numeric_dtype(window_data[col])]
         
         if not stat_features:
             # 如果没有 bar_ 前缀的特征，尝试使用所有数值列
