@@ -418,94 +418,96 @@ class TradingPipeline:
         features_list = []
         
         idx = 1
-        for bar_id in close_prices.index:
-            # 初始化特征字典
-            features = {}
+        X = None
+        y = None
+        # for bar_id in close_prices.index:
+        #     # 初始化特征字典
+        #     features = {}
             
-            # 确定特征窗口的时间范围（用于记录）
-            if enable_rolling_stats and bar_id >= rolling_window_bars:
-                # 滚动统计的时间范围
-                window_start_idx = bar_id - rolling_window_bars
-                window_end_idx = bar_id - 1
-            elif enable_window_features and bar_id >= feature_window_bars:
-                # 窗口特征的时间范围
-                window_start_idx = bar_id - feature_window_bars
-                window_end_idx = bar_id - 1
-            else:
-                # 窗口不足，跳过
-                continue
+        #     # 确定特征窗口的时间范围（用于记录）
+        #     if enable_rolling_stats and bar_id >= rolling_window_bars:
+        #         # 滚动统计的时间范围
+        #         window_start_idx = bar_id - rolling_window_bars
+        #         window_end_idx = bar_id - 1
+        #     elif enable_window_features and bar_id >= feature_window_bars:
+        #         # 窗口特征的时间范围
+        #         window_start_idx = bar_id - feature_window_bars
+        #         window_end_idx = bar_id - 1
+        #     else:
+        #         # 窗口不足，跳过
+        #         continue
             
-            feature_start_ts = bars.loc[window_start_idx, 'start_time']
-            feature_end_ts = bars.loc[window_end_idx, 'end_time']
+        #     feature_start_ts = bars.loc[window_start_idx, 'start_time']
+        #     feature_end_ts = bars.loc[window_end_idx, 'end_time']
             
-            # A. 原有的逐笔级微观结构特征（窗口内一次性聚合）- 可选
-            # if enable_window_features:
-            #     bar_window_start_idx = bar_id - feature_window_bars
-            #     bar_window_end_idx = bar_id - 1
+        #     # A. 原有的逐笔级微观结构特征（窗口内一次性聚合）- 可选
+        #     # if enable_window_features:
+        #     #     bar_window_start_idx = bar_id - feature_window_bars
+        #     #     bar_window_end_idx = bar_id - 1
                 
-            #     window_features = self.feature_extractor.extract_from_context(
-            #         ctx=self.trades_context,
-            #         start_ts=bars.loc[bar_window_start_idx, 'start_time'],
-            #         end_ts=bars.loc[bar_window_end_idx, 'end_time'],
-            #         bars=bars,
-            #         bar_window_start_idx=bar_window_start_idx,
-            #         bar_window_end_idx=bar_window_end_idx
-            #     )
-            #     # 添加前缀以区分窗口特征
-            #     features.update({f'window_{k}': v for k, v in window_features.items()})
+        #     #     window_features = self.feature_extractor.extract_from_context(
+        #     #         ctx=self.trades_context,
+        #     #         start_ts=bars.loc[bar_window_start_idx, 'start_time'],
+        #     #         end_ts=bars.loc[bar_window_end_idx, 'end_time'],
+        #     #         bars=bars,
+        #     #         bar_window_start_idx=bar_window_start_idx,
+        #     #         bar_window_end_idx=bar_window_end_idx
+        #     #     )
+        #     #     # 添加前缀以区分窗口特征
+        #     #     features.update({f'window_{k}': v for k, v in window_features.items()})
             
-            # B. 新增的 bar 级滚动统计特征
-            if enable_rolling_stats and bar_id >= rolling_window_bars:
-                rolling_feats = self.rolling_aggregator.extract_rolling_statistics(
-                    bars_with_features,  # 使用拼接后的数据
-                    window=rolling_window_bars,
-                    current_idx=bar_id
-                )
-                features.update(rolling_feats)
+        #     # B. 新增的 bar 级滚动统计特征
+        #     if enable_rolling_stats and bar_id >= rolling_window_bars:
+        #         rolling_feats = self.rolling_aggregator.extract_rolling_statistics(
+        #             bars_with_features,  # 使用拼接后的数据
+        #             window=rolling_window_bars,
+        #             current_idx=bar_id
+        #         )
+        #         features.update(rolling_feats)
             
-            # 如果两种特征都未启用，跳过该 bar
-            if not features:
-                continue
+        #     # 如果两种特征都未启用，跳过该 bar
+        #     if not features:
+        #         continue
             
-            if idx % 100 == 0:
-                print(f"  处理进度: {idx}/{len(close_prices.index)}")
-            idx += 1
+        #     if idx % 100 == 0:
+        #         print(f"  处理进度: {idx}/{len(close_prices.index)}")
+        #     idx += 1
             
-            features['bar_id'] = bar_id
-            features['feature_start'] = feature_start_ts
-            features['feature_end'] = feature_end_ts
-            features['prediction_time'] = bars.loc[bar_id, 'end_time']
+        #     features['bar_id'] = bar_id
+        #     features['feature_start'] = feature_start_ts
+        #     features['feature_end'] = feature_end_ts
+        #     features['prediction_time'] = bars.loc[bar_id, 'end_time']
             
-            features_list.append(features)
+        #     features_list.append(features)
         
-        # 构建特征DataFrame
-        X = pd.DataFrame(features_list).set_index('bar_id')
-        y = labels_df.loc[X.index]
+        # # 构建特征DataFrame
+        # X = pd.DataFrame(features_list).set_index('bar_id')
+        # y = labels_df.loc[X.index]
         
-        print(f"✓ 原始特征数量: {len(X.columns)}")
+        # print(f"✓ 原始特征数量: {len(X.columns)}")
         
-        # 过滤无效数据（分步处理，确保 X 和 y 严格对齐）
-        # 步骤 1: 过滤 y 中所有 log_return 列的无效值
-        log_return_cols = [col for col in y.columns if col.startswith('log_return_')]
-        y_mask = pd.Series(True, index=y.index)
-        for col in log_return_cols:
-            y_mask &= y[col].notna() & np.isfinite(y[col].values)
+        # # 过滤无效数据（分步处理，确保 X 和 y 严格对齐）
+        # # 步骤 1: 过滤 y 中所有 log_return 列的无效值
+        # log_return_cols = [col for col in y.columns if col.startswith('log_return_')]
+        # y_mask = pd.Series(True, index=y.index)
+        # for col in log_return_cols:
+        #     y_mask &= y[col].notna() & np.isfinite(y[col].values)
         
-        X = X.loc[y_mask]
-        y = y.loc[y_mask]
+        # X = X.loc[y_mask]
+        # y = y.loc[y_mask]
         
-        # 步骤 2: 替换 X 中的 inf 为 nan
-        X = X.replace([np.inf, -np.inf], np.nan)
+        # # 步骤 2: 替换 X 中的 inf 为 nan
+        # X = X.replace([np.inf, -np.inf], np.nan)
         
-        # 步骤 3: 删除 X 中包含 NaN 的行，并同步删除 y 中对应的行
-        x_valid_mask = ~X.isna().any(axis=1)
-        X = X.loc[x_valid_mask]
-        y = y.loc[x_valid_mask]
+        # # 步骤 3: 删除 X 中包含 NaN 的行，并同步删除 y 中对应的行
+        # x_valid_mask = ~X.isna().any(axis=1)
+        # X = X.loc[x_valid_mask]
+        # y = y.loc[x_valid_mask]
         
-        print(f"✓ 过滤后特征数量: {len(X.columns)}, 样本数: {len(X)}")
+        # print(f"✓ 过滤后特征数量: {len(X.columns)}, 样本数: {len(X)}")
         
-        self.features = X
-        self.labels = y
+        # self.features = X
+        # self.labels = y
         
         return X, y
     
@@ -621,14 +623,15 @@ class TradingPipeline:
         )
         print(f"提取了{len(X)}个样本，{len(X.columns)}个特征")
         
+        results = None
         # 训练评估
-        results = self.train_and_evaluate(
-            X, y,
-            model_type=kwargs.get('model_type', 'ridge'),
-            target_horizon=kwargs.get('target_horizon', 5),
-            n_splits=kwargs.get('n_splits', 5),
-            embargo_bars=kwargs.get('embargo_bars', 3)
-        )
+        # results = self.train_and_evaluate(
+        #     X, y,
+        #     model_type=kwargs.get('model_type', 'ridge'),
+        #     target_horizon=kwargs.get('target_horizon', 5),
+        #     n_splits=kwargs.get('n_splits', 5),
+        #     embargo_bars=kwargs.get('embargo_bars', 3)
+        # )
         
         # 可视化
         if kwargs.get('save_plots'):

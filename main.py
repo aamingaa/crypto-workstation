@@ -15,7 +15,7 @@ def main():
             'impact': False,
             'volatility': True,
             'path_shape': False,
-            'tail': False,
+            'tail': True,
             'bucketed_flow': {
                 'enabled': False,
                 'low_q': 0.2,
@@ -48,7 +48,7 @@ def main():
     
     # 数据配置
     start_date = '2025-01-01'
-    end_date = '2025-01-20'
+    end_date = '2025-01-02'
     dollar_threshold = 10000 * 60000
     dollar_threshold_str = str(dollar_threshold).replace("*", "_")
     
