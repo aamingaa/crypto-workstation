@@ -401,21 +401,21 @@ if __name__ == '__main__':
     # ==================== 单独转换模式 ====================
     # Daily 模式示例 - 将每天的zip单独转换为feather
     # convert_zip_to_feather(
-    #     start='2025-01-01',
-    #     end='2025-01-31',
+    #     start='2022-01-01',
+    #     end='2025-01-01',
     #     mode='daily',
     #     symbol='ETHUSDT',
     #     data_type='trades'
     # )
     
     # Monthly 模式示例 - 将每月的zip单独转换为feather
-    # convert_zip_to_feather(
-    #     start='2025-01',
-    #     end='2025-06',
-    #     mode='monthly',
-    #     symbol='ETHUSDT',
-    #     data_type='trades'
-    # )
+    convert_zip_to_feather(
+        start='2022-01',
+        end='2023-12',
+        mode='monthly',
+        symbol='ETHUSDT',
+        data_type='trades'
+    )
     
     # ==================== 合并模式 ====================
     # 合并多天数据到一个feather文件
@@ -430,15 +430,15 @@ if __name__ == '__main__':
     # )
     
     # 合并多个月数据到一个feather文件
-    merge_to_feather(
-        start='2025-01',
-        end='2025-03',
-        output_path='/Volumes/Ext-Disk/data/futures/um/monthly/trades/ETHUSDT/ETHUSDT-trades-2025-01-03-merged.feather',
-        mode='monthly',
-        symbol='ETHUSDT',
-        data_type='trades',
-        # sort_by='time'  # 可选：按时间字段排序
-    )
+    # merge_to_feather(
+    #     start='2025-01',
+    #     end='2025-03',
+    #     output_path='/Volumes/Ext-Disk/data/futures/um/monthly/trades/ETHUSDT/ETHUSDT-trades-2025-01-03-merged.feather',
+    #     mode='monthly',
+    #     symbol='ETHUSDT',
+    #     data_type='trades',
+    #     # sort_by='time'  # 可选：按时间字段排序
+    # )
     
     pass
     

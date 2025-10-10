@@ -11,9 +11,9 @@ def main():
     config = {
         'features': {
             'basic': False,
-            'orderflow': True,
+            'orderflow': False,
             'impact': False,
-            'volatility': True,
+            'volatility': False,
             'path_shape': False,
             'tail': True,
             'bucketed_flow': {
@@ -48,7 +48,7 @@ def main():
     
     # 数据配置
     start_date = '2025-01-01'
-    end_date = '2025-01-02'
+    end_date = '2025-09-01'
     dollar_threshold = 10000 * 60000
     dollar_threshold_str = str(dollar_threshold).replace("*", "_")
     
