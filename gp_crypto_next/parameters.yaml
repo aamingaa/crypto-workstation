@@ -1,7 +1,7 @@
 rolling_window: 2000   # 指定rolling_window窗口大小
 freq: 1h    # 指定数据频率
 
-sym: BTCUSDT    # 指定gplearn做训练的品种数据, 不支持截面上的多品种   btcusdt ethusdt bnbusdt solusdt
+sym: ETHUSDT    # 指定gplearn做训练的品种数据, 不支持截面上的多品种   btcusdt ethusdt bnbusdt solusdt
 y_train_ret_period: 1    # 指定在训练集上的y值是未来第几个bar的收益率差
 start_date_train: '2025-01-01'
 end_date_train: '2025-01-10'

@@ -1,4 +1,4 @@
-from util.sampling import dollar_bars
+from utils.sampling import dollar_bars
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -53,7 +53,7 @@ import keras
 # Technical analysis
 import ta
 import getTA #local
-from util import tautil #local
+from utils import tautil #local
 
 
 
