@@ -113,6 +113,8 @@ def convert_zip_to_feather_monthly(
     symbol: str = 'ETHUSDT',
     base_path: str = '/Volumes/Ext-Disk/data/futures/um',
     data_type: str = 'trades',
+    freq: str = '15m',
+    year: str = '2025',
     verbose: bool = True
 ) -> None:
     """将每月的 zip 格式数据转换为 feather 格式
@@ -126,8 +128,10 @@ def convert_zip_to_feather_monthly(
         verbose: 是否打印详细信息
     """
     month_list = _generate_month_range(start_month, end_month)
-    
-    data_path_template = f'{base_path}/monthly/{data_type}/{symbol}/{symbol}-{data_type}-{{month}}.{{ext}}'
+    if data_type == 'klines':
+        data_path_template = f'{base_path}/monthly/{data_type}/{symbol}/{freq}/{year}/{symbol}-{freq}-{{month}}.{{ext}}'
+    else:
+        data_path_template = f'{base_path}/monthly/{data_type}/{symbol}/{symbol}-{data_type}-{{month}}.{{ext}}'
     
     for month in month_list:
         zip_file_path = data_path_template.format(month=month, ext='zip')
@@ -171,6 +175,8 @@ def convert_zip_to_feather(
     symbol: str = 'ETHUSDT',
     base_path: str = '/Volumes/Ext-Disk/data/futures/um',
     data_type: str = 'trades',
+    freq: str = '15m',
+    year: str = '2025',
     verbose: bool = True
 ) -> None:
     """将 zip 格式数据转换为 feather 格式（统一接口）
@@ -187,7 +193,7 @@ def convert_zip_to_feather(
     if mode == 'daily':
         convert_zip_to_feather_daily(start, end, symbol, base_path, data_type, verbose)
     elif mode == 'monthly':
-        convert_zip_to_feather_monthly(start, end, symbol, base_path, data_type, verbose)
+        convert_zip_to_feather_monthly(start, end, symbol, base_path, data_type, freq, year, verbose)
     else:
         raise ValueError(f"mode 必须是 'daily' 或 'monthly'，当前值: {mode}")
 
@@ -409,13 +415,15 @@ if __name__ == '__main__':
     # )
     
     # Monthly 模式示例 - 将每月的zip单独转换为feather
-    # convert_zip_to_feather(
-    #     start='2022-01',
-    #     end='2023-12',
-    #     mode='monthly',
-    #     symbol='ETHUSDT',
-    #     data_type='trades'
-    # )
+    convert_zip_to_feather(
+        start='2025-01',
+        end='2025-12',
+        mode='monthly',
+        symbol='ETHUSDT',
+        freq='15m',
+        year='2025',
+        data_type='klines'
+    )
     
     # ==================== 合并模式 ====================
     # 合并多天数据到一个feather文件
@@ -430,15 +438,15 @@ if __name__ == '__main__':
     # )
     
     # 合并多个月数据到一个feather文件
-    merge_to_feather(
-        start='2025-07',
-        end='2025-08',
-        output_path='/Volumes/Ext-Disk/data/futures/um/monthly/trades/ETHUSDT/ETHUSDT-trades-2025-04-06-merged.feather',
-        mode='monthly',
-        symbol='ETHUSDT',
-        data_type='trades',
-        # sort_by='time'  # 可选：按时间字段排序
-    )
+    # merge_to_feather(
+    #     start='2025-07',
+    #     end='2025-08',
+    #     output_path='/Volumes/Ext-Disk/data/futures/um/monthly/trades/ETHUSDT/ETHUSDT-trades-2025-04-06-merged.feather',
+    #     mode='monthly',
+    #     symbol='ETHUSDT',
+    #     data_type='trades',
+    #     # sort_by='time'  # 可选：按时间字段排序
+    # )
     
     pass
     

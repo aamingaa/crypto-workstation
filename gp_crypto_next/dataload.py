@@ -26,14 +26,14 @@ import zipfile
 from io import BytesIO
 
 # 微结构（bar级）稳健代理函数
-from utils.microstructure_features import (
-    get_roll_measure,
-    get_corwin_schultz_estimator,
-    get_bekker_parkinson_vol,
-    get_bar_based_kyle_lambda,
-    get_bar_based_amihud_lambda,
-    get_bar_based_hasbrouck_lambda,
-)
+# from utils.microstructure_features import (
+#     get_roll_measure,
+#     get_corwin_schultz_estimator,
+#     get_bekker_parkinson_vol,
+#     get_bar_based_kyle_lambda,
+#     get_bar_based_amihud_lambda,
+#     get_bar_based_hasbrouck_lambda,
+# )
 
 # 可选：基于逐笔数据构建 bars 并提取 features/ 目录下的微结构特征
 from data.time_bars import TimeBarBuilder
@@ -339,6 +339,9 @@ def _standardize_dataframe_columns(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
     df.set_index('open_time', inplace=True)
+
+    df['close_time'] = pd.to_datetime(df['close_time'], unit='ms')
+
     
     # 列名映射：新列名 -> 旧列名
     # 新列名: open_time,open,high,low,close,volume,close_time,quote_volume,count,taker_buy_volume,taker_buy_quote_volume,ignore
@@ -351,6 +354,7 @@ def _standardize_dataframe_columns(df: pd.DataFrame) -> pd.DataFrame:
         'volume': 'vol',
         'quote_volume': 'vol_ccy',
         'count': 'trades',
+        'close_time': 'close_time',
     }
     
     df = df.rename(columns=column_mapping)
@@ -358,7 +362,7 @@ def _standardize_dataframe_columns(df: pd.DataFrame) -> pd.DataFrame:
     # 选择需要的列，对于缺失的列用 0 填充
     required_columns = ['o', 'h', 'l', 'c', 'vol', 'vol_ccy', 'trades',
                        'oi', 'oi_ccy', 'toptrader_count_lsr', 'toptrader_oi_lsr', 'count_lsr',
-                       'taker_vol_lsr']
+                       'taker_vol_lsr', 'close_time']
     
     # 为缺失的列添加默认值 0
     for col in required_columns:
@@ -417,13 +421,6 @@ def data_load_v2(sym: str, data_dir: str, start_date: str, end_date: str,
     
     # 生成日期范围
     date_list = _generate_date_range(start_date, end_date, freq_enum)
-    # print(f"\n{'='*60}")
-    # print(f"开始读取 {sym} 数据")
-    # print(f"时间范围: {start_date} 至 {end_date}")
-    # print(f"数据频率: {frequency} ({len(date_list)} 个文件)")
-    # print(f"时间周期: {timeframe}")
-    # print(f"数据目录: {data_dir}")
-    # print(f"{'='*60}\n")
     
     # 读取所有时间段的数据
     df_list = []
@@ -681,7 +678,7 @@ def data_prepare(sym, freq, start_date_train, end_date_train, start_date_test, e
 
     feature_names = z_train.columns
 
-    print('检查x all是不是等于 x train和y trian相加，再检查trian和test以及close和open的形状是否一致')
+    print('检查x all是不是等于 x train和y train相加，再检查trian和test以及close和open的形状是否一致')
     # X_all 专门是为做batch prediction的时候，要用X_all生成test集要用到的factor_df, 因为factor的计算需要之前一段window中的feature值
     print(f'检查X_all的形状 {X_all.shape}')
     print(f'检查x dataset train的形状 {X_dataset_train.shape}')

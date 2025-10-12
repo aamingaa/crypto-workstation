@@ -66,8 +66,8 @@ class GPAnalyzer:
         self.data_initialized = False
         self.base_model_directory = Path.cwd() / 'gp_models'
         self.initialize_his_data()
-        # self.total_factor_file_name = f"{self.sym}_{self.freq}_{self.y_train_ret_period}_{self.start_date_train}_{self.end_date_train}_{self.start_date_test}_{self.end_date_test}.csv.gz"
-        self.total_factor_file_name = f"BTCUSDT_1h_1_2025-01-01_2025-01-10_2025-01-10_2025-01-20.csv.gz"
+        self.total_factor_file_name = f"{self.sym}_{self.freq}_{self.y_train_ret_period}_{self.start_date_train}_{self.end_date_train}_{self.start_date_test}_{self.end_date_test}.csv.gz"
+        # self.total_factor_file_name = f"BTCUSDT_1h_1_2025-01-01_2025-01-10_2025-01-10_2025-01-20.csv.gz"
         # self.total_factor_file_path = "/Users/aming/project/python/crypto-workstation/gp_models/BTCUSDT_1h_1_2025-01-01_2025-01-10_2025-01-10_2025-01-20.csv.gz"
         self.total_factor_file_path = self.base_model_directory / self.total_factor_file_name
 
@@ -150,7 +150,7 @@ class GPAnalyzer:
             else:
                 self.X_all, self.X_train, self.y_train, self.ret_train, self.X_test, self.y_test, self.ret_test, self.feature_names,self.open_train,self.open_test,self.close_train,self.close_test, self.z_index ,self.ohlc= dataload.data_prepare(
                     self.sym, self.freq, self.start_date_train, self.end_date_train,
-                    self.start_date_test, self.end_date_test, rolling_w=self.rolling_window, data_dir=self.data_dir, read_frequency=self.read_frequency, timeframe=self.timeframe, file_path=self.file_path)
+                    self.start_date_test, self.end_date_test, y_train_ret_period=self.y_train_ret_period, rolling_w=self.rolling_window, data_dir=self.data_dir, read_frequency=self.read_frequency, timeframe=self.timeframe, file_path=self.file_path)
             self.data_initialized = True
             self.test_index = self.z_index[(self.z_index >= pd.to_datetime(self.start_date_test)) & (
                         self.z_index <= pd.to_datetime(self.end_date_test))]

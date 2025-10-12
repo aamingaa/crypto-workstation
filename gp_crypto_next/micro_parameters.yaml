@@ -1,14 +1,14 @@
 rolling_window: 2000   # 指定rolling_window窗口大小
-freq: 15m    # 指定数据频率
+freq: 1h    # 指定数据频率
 
 sym: ETHUSDT    # 指定gplearn做训练的品种数据, 不支持截面上的多品种   btcusdt ethusdt bnbusdt solusdt
 y_train_ret_period: 5    # 指定在训练集上的y值是未来第几个bar的收益率差
-start_date_train: '2025-01'
-end_date_train: '2025-02'
-start_date_test: '2025-02'
-end_date_test: '2025-02'
-timeframe: '15m'
-data_dir: '/Volumes/Ext-Disk/data/futures/um/monthly/klines/ETHUSDT/15m/2025'
+start_date_train: '2025-01-01'
+end_date_train: '2025-01-10'
+start_date_test: '2025-01-10'
+end_date_test: '2025-01-20'
+timeframe: '1h'
+data_dir: '/Volumes/Ext-Disk/data/futures/um/monthly/klines/ETHUSDT/1h'
 read_frequency: 'monthly'
 
 # ===== 可选：直接指定数据文件路径 =====
@@ -56,11 +56,12 @@ use_feature_extractors: true
 trades_dir: '/path/to/trades'   # 放逐笔数据的目录（需自备 {SYM}_trades.feather/csv）
 trades_load_mode: daily            # 或 daily/monthly
 prefer_trades_feather: true
+# daily_data_template: '/path/to/daily/{date}.feather'       # 或 .zip
 daily_data_template: '/Volumes/Ext-Disk/data/futures/um/daily/trades/ETHUSDT/ETHUSDT-trades-{date}.feather'       # 或 .zip
 monthly_data_template: '/Volumes/Ext-Disk/data/futures/um/monthly/trades/ETHUSDT/ETHUSDT-trades-{month}.feather'  # 或 .zip
 bar_builder: time                 # 或 dollar
 dollar_threshold: 1000000
-feature_window_bars: 48
+feature_window_bars: 10
 
 feature_types: ['orderflow']
 
