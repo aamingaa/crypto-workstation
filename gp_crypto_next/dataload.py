@@ -131,8 +131,9 @@ def _build_file_paths(sym: str, date_str: str, data_dir: str, timeframe: str = '
     else:
         raise ValueError(f"不支持的数据频率: {frequency}")
     
-    feather_path = os.path.join(data_dir, f"{file_base_name}.feather")
-    zip_path = os.path.join(data_dir, f"{file_base_name}.zip")
+    year = date_str.split('-')[0]
+    feather_path = os.path.join(f'{data_dir}/{year}', f"{file_base_name}.feather")
+    zip_path = os.path.join(f'{data_dir}/{year}', f"{file_base_name}.zip")
     
     return file_base_name, feather_path, zip_path
 
@@ -340,8 +341,8 @@ def _standardize_dataframe_columns(df: pd.DataFrame) -> pd.DataFrame:
     df['open_time'] = pd.to_datetime(df['open_time'], unit='ms')
     df.set_index('open_time', inplace=True)
 
-    df['close_time'] = pd.to_datetime(df['close_time'], unit='ms')
-
+    # df['close_time'] = pd.to_datetime(df['close_time'], unit='ms')
+    # df.set_index('close_time', inplace=True)
     
     # 列名映射：新列名 -> 旧列名
     # 新列名: open_time,open,high,low,close,volume,close_time,quote_volume,count,taker_buy_volume,taker_buy_quote_volume,ignore
@@ -494,6 +495,9 @@ def resample(z: pd.DataFrame, freq: str) -> pd.DataFrame:
     '''
     这是不支持vwap的，默认读入的数据是没有turnover信息，自然也没有vwap的信息，不需要获取sym的乘数
     '''
+    if freq == '15m':
+        return z
+    
     if freq != '1min' or freq != '1m':
         z.index = pd.to_datetime(z.index)
         # 注意closed和label参数
