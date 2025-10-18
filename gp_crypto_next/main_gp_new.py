@@ -147,6 +147,10 @@ class GPAnalyzer:
                     use_rolling_aggregator=getattr(self, 'use_rolling_aggregator', True),
                     feature_types=getattr(self, 'feature_types', None),
                     feature_keywords=getattr(self, 'feature_keywords', None))
+            elif str(self.data_source).lower() == 'thick_rolling':
+                self.X_all, self.X_train, self.y_train, self.ret_train, self.X_test, self.y_test, self.ret_test, self.feature_names,self.open_train,self.open_test,self.close_train,self.close_test, self.z_index ,self.ohlc= dataload.data_thick_rolling_prepare(
+                    self.sym, self.freq, self.start_date_train, self.end_date_train,
+                    self.start_date_test, self.end_date_test, y_train_ret_period=self.y_train_ret_period, rolling_w=self.rolling_window, data_dir=self.data_dir, read_frequency=self.read_frequency, timeframe=self.timeframe, file_path=self.file_path)
             else:
                 self.X_all, self.X_train, self.y_train, self.ret_train, self.X_test, self.y_test, self.ret_test, self.feature_names,self.open_train,self.open_test,self.close_train,self.close_test, self.z_index ,self.ohlc= dataload.data_prepare(
                     self.sym, self.freq, self.start_date_train, self.end_date_train,
