@@ -69,7 +69,7 @@ def _generate_date_range(start_date: str, end_date: str, read_frequency: DataFre
     
     参数:
     start_date: 起始日期
-        - 月度格式: 'YYYY-MM' (如 '2020-01')
+        - 月度格式: 'YYYY-MM' (如 '2020-01') 或 'YYYY-MM-DD' (自动转换为 'YYYY-MM')
         - 日度格式: 'YYYY-MM-DD' (如 '2020-01-01')
     end_date: 结束日期，格式同上
     frequency: 数据频率（月度或日度）
@@ -78,8 +78,17 @@ def _generate_date_range(start_date: str, end_date: str, read_frequency: DataFre
     日期字符串列表
     """
     if read_frequency == DataFrequency.MONTHLY:
-        start_dt = datetime.strptime(start_date, '%Y-%m')
-        end_dt = datetime.strptime(end_date, '%Y-%m')
+        # 兼容 'YYYY-MM' 和 'YYYY-MM-DD' 两种格式
+        # 如果是 'YYYY-MM-DD' 格式，自动截取为 'YYYY-MM'
+        new_start_date = start_date
+        new_end_date = end_date
+        if len(start_date) == 10:  # 'YYYY-MM-DD' 格式
+            new_start_date = start_date[:7]
+        if len(end_date) == 10:
+            new_end_date = end_date[:7]
+            
+        start_dt = datetime.strptime(new_start_date, '%Y-%m')
+        end_dt = datetime.strptime(new_end_date, '%Y-%m')
         
         date_list = []
         current_dt = start_dt
@@ -867,6 +876,268 @@ def data_thick_rolling_prepare(sym, freq, start_date_train, end_date_train, star
 
     # X_all 专门是为做batch prediction的时候，要用X_all生成test集要用到的factor_df, 因为factor的计算需要之前一段window中的feature值
     return X_all, X_dataset_train, y_dataset_train,ret_dataset_train, X_dataset_test, y_dataset_test,ret_dataset_test, feature_names,open_train,open_test,close_train,close_test, z.index ,ohlcva_df
+
+
+def data_prepare_coarse_grain_rolling(
+        sym: str, 
+        freq: str,  # 预测周期，例如 '2h' 表示预测未来2小时收益
+        start_date_train: str, 
+        end_date_train: str,
+        start_date_test: str, 
+        end_date_test: str,
+        coarse_grain_period: str = '2h',  # 粗粒度特征桶周期
+        feature_lookback_bars: int = 8,    # 特征回溯桶数（8个2h = 16小时）
+        rolling_step: str = '10min',       # 滚动步长
+        y_train_ret_period: int = 1,       # 预测周期（以coarse_grain为单位，1表示1个2h）
+        rolling_w: int = 2000,
+        output_format: str = 'ndarry',
+        data_dir: str = '',
+        read_frequency: str = '',
+        timeframe: str = '',
+        file_path: Optional[str] = None
+    ):
+    """
+    粗粒度特征 + 细粒度滚动的数据准备方法
+    
+    核心思想：
+    - 特征使用粗粒度周期（如2小时）聚合，减少噪声
+    - 特征窗口使用固定数量的粗粒度桶（如8个2小时 = 16小时）
+    - 预测起点以细粒度步长滚动（如10分钟），产生高频样本
+    - 预测目标是未来N个粗粒度周期的收益（如未来2小时）
+    
+    参数说明：
+    - sym: 交易对符号
+    - freq: 用于兼容，实际预测周期由 y_train_ret_period * coarse_grain_period 决定
+    - coarse_grain_period: 粗粒度特征桶周期，如 '2h', '1h', '30min'
+    - feature_lookback_bars: 特征回溯的粗粒度桶数量（如8表示8个2h桶）
+    - rolling_step: 滚动步长，如 '10min', '5min'
+    - y_train_ret_period: 预测周期数（以coarse_grain_period为单位）
+    
+    示例场景：
+    - coarse_grain_period='2h', feature_lookback_bars=8, rolling_step='10min'
+    - 在9:00时刻：用7:00-9:00前的8个2h桶（前一天17:00-当天9:00）做特征，预测9:00-11:00收益
+    - 在9:10时刻：用7:10-9:10前的8个2h桶做特征，预测9:10-11:10收益
+    
+    返回与 data_prepare 相同的接口
+    """
+    
+    print(f"\n{'='*60}")
+    print(f"粗粒度特征 + 细粒度滚动数据准备")
+    print(f"品种: {sym}")
+    print(f"粗粒度周期: {coarse_grain_period}")
+    print(f"特征窗口: {feature_lookback_bars} × {coarse_grain_period} = {feature_lookback_bars * pd.Timedelta(coarse_grain_period).total_seconds() / 3600:.1f}小时")
+    print(f"滚动步长: {rolling_step}")
+    print(f"预测周期: {y_train_ret_period} × {coarse_grain_period}")
+    print(f"{'='*60}\n")
+    
+    # ========== 第一步：读取原始数据（细粒度） ==========
+    z_raw = data_load_v2(sym, data_dir=data_dir, start_date=start_date_train, end_date=end_date_test,
+                         timeframe=timeframe, read_frequency=read_frequency, file_path=file_path)
+    z_raw.index = pd.to_datetime(z_raw.index)
+    
+    # 扩展数据范围以容纳特征窗口
+    feature_window_timedelta = pd.Timedelta(coarse_grain_period) * feature_lookback_bars
+    extended_start = pd.to_datetime(start_date_train) - feature_window_timedelta - pd.Timedelta('1d')  # 多留1天buffer
+    
+    z_raw = z_raw[(z_raw.index >= extended_start) & (z_raw.index <= pd.to_datetime(end_date_test))]
+    print(f"读取原始数据: {len(z_raw)} 行，时间范围 {z_raw.index.min()} 至 {z_raw.index.max()}")
+    
+    # ========== 第二步：生成粗粒度OHLCV桶 ==========
+    print(f"\n生成粗粒度OHLCV桶（周期={coarse_grain_period}）...")
+    coarse_bars = resample(z_raw, coarse_grain_period)
+    print(f"粗粒度桶数量: {len(coarse_bars)}")
+    
+    # ========== 第三步：为粗粒度桶提取特征 ==========
+    print(f"\n为粗粒度桶提取特征...")
+    base_feature = originalFeature.BaseFeature(coarse_bars.copy())
+    coarse_features_df = base_feature.init_feature_df
+    print(f"粗粒度特征维度: {coarse_features_df.shape}")
+    
+    # ========== 第四步：生成细粒度滚动时间网格 ==========
+    print(f"\n生成细粒度滚动时间网格（步长={rolling_step}）...")
+    
+    # 从训练集开始到测试集结束，按rolling_step生成时间点
+    grid_start = pd.to_datetime(start_date_train)
+    grid_end = pd.to_datetime(end_date_test)
+    
+    # 生成时间网格
+    fine_grain_timestamps = pd.date_range(start=grid_start, end=grid_end, freq=rolling_step)
+    print(f"生成 {len(fine_grain_timestamps)} 个时间点")
+    
+    # ========== 第五步：为每个细粒度时间点提取特征和标签 ==========
+    print(f"\n为每个时间点提取特征和标签...")
+    
+    samples = []
+    valid_count = 0
+    skipped_count = 0
+    
+    coarse_period_td = pd.Timedelta(coarse_grain_period)
+    prediction_horizon_td = coarse_period_td * y_train_ret_period
+    
+    for idx, t in enumerate(fine_grain_timestamps):
+        if idx % 50 == 0:
+            print(f"  处理进度: {idx}/{len(fine_grain_timestamps)} ({100*idx/len(fine_grain_timestamps):.1f}%)")
+        
+        # 确定特征窗口：t时刻前的 feature_lookback_bars 个粗粒度桶
+        feature_window_start = t - feature_window_timedelta
+        feature_window_end = t
+        
+        if feature_window_start < coarse_features_df.index.min():
+            skipped_count += 1
+            continue
+        
+        if feature_window_end > coarse_features_df.index.max():
+            skipped_count += 1
+            continue
+        
+        # 筛选特征窗口内的粗粒度桶
+        window_mask = (coarse_features_df.index >= feature_window_start) & \
+                     (coarse_features_df.index < feature_window_end)
+        window_bars = coarse_features_df[window_mask]
+        
+        # 检查是否有足够的历史数据
+        # if len(window_bars) < feature_lookback_bars * 0.8:  # 容忍20%缺失
+        #     skipped_count += 1
+        #     continue
+        
+        # 对窗口内的粗粒度特征进行聚合（多种统计量）
+        feature_dict = {}
+        for col in window_bars.columns:
+            if col in ['c', 'v', 'o', 'h', 'l', 'vol']:
+                continue
+            if pd.api.types.is_numeric_dtype(window_bars[col]):
+                col_data = window_bars[col]
+                n = len(col_data)
+                
+                # 基础统计量
+                feature_dict[f'{col}_mean'] = col_data.mean()
+                feature_dict[f'{col}_std'] = col_data.std()
+                feature_dict[f'{col}_max'] = col_data.max()
+                feature_dict[f'{col}_min'] = col_data.min()
+                feature_dict[f'{col}_last'] = col_data.iloc[-1] if n > 0 else 0
+                
+                # 高阶统计量
+                feature_dict[f'{col}_skew'] = col_data.skew() if n > 2 else 0  # 偏度（需要至少3个点）
+                feature_dict[f'{col}_kurt'] = col_data.kurtosis() if n > 3 else 0  # 峰度（需要至少4个点）
+                
+                # 分位数（更稳健）
+                feature_dict[f'{col}_median'] = col_data.median()  # 中位数
+                feature_dict[f'{col}_q25'] = col_data.quantile(0.25) if n > 0 else 0  # 25%分位数
+                feature_dict[f'{col}_q75'] = col_data.quantile(0.75) if n > 0 else 0  # 75%分位数
+                
+                # 变化率（趋势）
+                # if n > 1:
+                #     feature_dict[f'{col}_change'] = col_data.iloc[-1] - col_data.iloc[0]  # 绝对变化
+                #     feature_dict[f'{col}_pct_change'] = (col_data.iloc[-1] / col_data.iloc[0] - 1) if col_data.iloc[0] != 0 else 0  # 相对变化
+                # else:
+                #     feature_dict[f'{col}_change'] = 0
+                #     feature_dict[f'{col}_pct_change'] = 0
+        
+        # 计算t时刻的价格（用于标签计算）
+        # 找到t时刻最近的粗粒度桶
+        closest_bar_idx = coarse_bars.index.searchsorted(t, side='right') - 1
+        if closest_bar_idx < 0 or closest_bar_idx >= len(coarse_bars):
+            skipped_count += 1
+            continue
+        
+        t_price = coarse_bars.iloc[closest_bar_idx]['c']
+        
+        # 计算t+prediction_horizon时刻的价格
+        t_future = t + prediction_horizon_td
+        future_bar_idx = coarse_bars.index.searchsorted(t_future, side='right') - 1
+        if future_bar_idx < 0 or future_bar_idx >= len(coarse_bars):
+            skipped_count += 1
+            continue
+        
+        t_future_price = coarse_bars.iloc[future_bar_idx]['c']
+        
+        # 计算对数收益
+        log_return = np.log(t_future_price / t_price)
+        
+        # 记录样本
+        sample = {
+            'timestamp': t,
+            't_price': t_price,
+            't_future_price': t_future_price,
+            'return_f': log_return,
+            **feature_dict
+        }
+        samples.append(sample)
+        valid_count += 1
+    
+    print(f"\n✓ 生成样本完成: 有效 {valid_count} 个，跳过 {skipped_count} 个")
+    
+    # ========== 第六步：构建DataFrame并处理 ==========
+    df_samples = pd.DataFrame(samples)
+    df_samples.set_index('timestamp', inplace=True)
+    
+    print(f"样本时间范围: {df_samples.index.min()} 至 {df_samples.index.max()}")
+    print(f"样本数量: {len(df_samples)}")
+    print(f"特征维度: {len([c for c in df_samples.columns if c not in ['t_price', 't_future_price', 'return_f']])}")
+    
+    # 应用滚动标准化到标签
+    def norm_ret(x, window=rolling_w):
+        x = np.log1p(np.asarray(x))
+        factors_data = pd.DataFrame(x, columns=['factor'])
+        factors_data = factors_data.replace([np.inf, -np.inf, np.nan], 0.0)
+        factors_std = factors_data.rolling(window=window, min_periods=1).std()
+        factor_value = factors_data / factors_std
+        factor_value = factor_value.replace([np.inf, -np.inf, np.nan], 0.0)
+        return np.nan_to_num(factor_value).flatten()
+    
+    df_samples['ret_rolling_zscore'] = norm_ret(df_samples['return_f'].values)
+    
+    print(f"\n标签统计:")
+    print(f"return_f - 偏度: {df_samples['return_f'].skew():.4f}, 峰度: {df_samples['return_f'].kurtosis():.4f}")
+    print(f"ret_rolling_zscore - 偏度: {df_samples['ret_rolling_zscore'].skew():.4f}, 峰度: {df_samples['ret_rolling_zscore'].kurtosis():.4f}")
+    
+    # ========== 第七步：分割训练集和测试集 ==========
+    train_mask = (df_samples.index >= pd.to_datetime(start_date_train)) & \
+                 (df_samples.index < pd.to_datetime(end_date_train))
+    test_mask = (df_samples.index >= pd.to_datetime(start_date_test)) & \
+                (df_samples.index <= pd.to_datetime(end_date_test))
+    
+    # 提取特征列
+    feature_cols = [c for c in df_samples.columns if c not in ['t_price', 't_future_price', 'return_f', 'ret_rolling_zscore']]
+    
+    X_all = df_samples[feature_cols].fillna(0)
+    X_train = X_all[train_mask]
+    X_test = X_all[test_mask]
+    
+    y_train = df_samples.loc[train_mask, 'ret_rolling_zscore'].fillna(0).values
+    y_test = df_samples.loc[test_mask, 'ret_rolling_zscore'].fillna(0).values
+    ret_train = df_samples.loc[train_mask, 'return_f'].fillna(0).values
+    ret_test = df_samples.loc[test_mask, 'return_f'].fillna(0).values
+    
+    # 价格数据（用于回测）
+    open_train = df_samples.loc[train_mask, 't_price']
+    close_train = df_samples.loc[train_mask, 't_price']  # 简化：开盘价=当前价
+    open_test = df_samples.loc[test_mask, 't_price']
+    close_test = df_samples.loc[test_mask, 't_price']
+    
+    feature_names = feature_cols
+    
+    # 格式转换
+    if output_format == 'ndarry':
+        X_all = X_all.values
+        X_train = X_train.values
+        X_test = X_test.values
+    elif output_format == 'dataframe':
+        pass  # 保持DataFrame格式
+    else:
+        raise ValueError(f"output_format 应为 'ndarry' 或 'dataframe'，当前为 {output_format}")
+    
+    print(f"\n{'='*60}")
+    print(f"数据分割完成:")
+    print(f"  训练集: {len(X_train)} 样本")
+    print(f"  测试集: {len(X_test)} 样本")
+    print(f"  特征数: {len(feature_names)}")
+    print(f"{'='*60}\n")
+    
+    # 返回接口与 data_prepare 保持一致
+    return (X_all, X_train, y_train, ret_train, X_test, y_test, ret_test,
+            feature_names, open_train, open_test, close_train, close_test,
+            df_samples.index, coarse_bars)
 
 
 def data_prepare_micro(sym: str, freq: str,

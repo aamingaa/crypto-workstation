@@ -147,6 +147,21 @@ class GPAnalyzer:
                     use_rolling_aggregator=getattr(self, 'use_rolling_aggregator', True),
                     feature_types=getattr(self, 'feature_types', None),
                     feature_keywords=getattr(self, 'feature_keywords', None))
+            elif str(self.data_source).lower() == 'coarse_grain':
+                # 新增：粗粒度特征 + 细粒度滚动版数据准备
+                self.X_all, self.X_train, self.y_train, self.ret_train, self.X_test, self.y_test, self.ret_test, self.feature_names,self.open_train,self.open_test,self.close_train,self.close_test, self.z_index ,self.ohlc= dataload.data_prepare_coarse_grain_rolling(
+                    self.sym, self.freq, self.start_date_train, self.end_date_train,
+                    self.start_date_test, self.end_date_test, 
+                    coarse_grain_period=getattr(self, 'coarse_grain_period', '2h'),
+                    feature_lookback_bars=getattr(self, 'feature_lookback_bars', 8),
+                    rolling_step=getattr(self, 'rolling_step', '10min'),
+                    y_train_ret_period=self.y_train_ret_period,
+                    rolling_w=self.rolling_window, 
+                    output_format='ndarry',
+                    data_dir=self.data_dir, 
+                    read_frequency=self.read_frequency, 
+                    timeframe=self.timeframe,
+                    file_path=self.file_path)
             elif str(self.data_source).lower() == 'thick_rolling':
                 self.X_all, self.X_train, self.y_train, self.ret_train, self.X_test, self.y_test, self.ret_test, self.feature_names,self.open_train,self.open_test,self.close_train,self.close_test, self.z_index ,self.ohlc= dataload.data_thick_rolling_prepare(
                     self.sym, self.freq, self.start_date_train, self.end_date_train,
@@ -832,21 +847,22 @@ class GPAnalyzer:
 
 
 if __name__ == '__main__':
-    yaml_file_path = './parameters.yaml'
+    # yaml_file_path = './parameters.yaml'
+    yaml_file_path = './coarse_grain_parameters.yaml'
     analyzer = GPAnalyzer(yaml_file_path)
 
     # Option1 - 运行遗传编程任务，一批批的生成新的因子
     analyzer.run()
 
     # # Option2 - 直接评估现有因子库中的所有因子， 执行metric打分 （可以执行另外的一组metric，重新定义另一个metric_dict即可）。不需要运行gplearn.
-    analyzer.evaluate_existing_factors()
+    # analyzer.evaluate_existing_factors()
 
     ## Option3 - 寻找出优秀的因子，并绘制出滚动夏普和pnl曲线,再加工模型模型
 
-    analyzer.read_and_cal_metrics()
-    exp_pool = analyzer.elite_factors_further_process()
-    pos_test,pos_train = analyzer.go_model(exp_pool)
-    analyzer.real_trading_simulation_plot(pos_test,pos_train,0.000)
+    # analyzer.read_and_cal_metrics()
+    # exp_pool = analyzer.elite_factors_further_process()
+    # pos_test,pos_train = analyzer.go_model(exp_pool)
+    # analyzer.real_trading_simulation_plot(pos_test,pos_train,0.000)
 
     # # Option4 - 解析所有的因子表达式
     # # 读取csv.gz文件
