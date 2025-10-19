@@ -506,7 +506,7 @@ class GPAnalyzer:
         '''
         读取之前生成的因子值，并计算每一个因子值的metric
         注意这里计算的metric都是返回一个值的'''
-        z = pd.read_csv('/Users/aming/project/python/crypto-workstation/gp_models/BTCUSDT_1h_1_2025-01-01_2025-01-10_2025-01-10_2025-01-20.csv.gz')
+        z = pd.read_csv('/Users/aming/project/python/crypto-workstation/gp_models/ETHUSDT_15m_1_2025-01-01_2025-01-20_2025-01-20_2025-01-31.csv.gz')
         # z = pd.read_csv('/home/etern/crypto/gp-crypto/elite_pool/factor_selected.csv')
         z.drop_duplicates(inplace=True)
         
@@ -671,6 +671,13 @@ class GPAnalyzer:
         # 兼容不同的列名：'c' 或 'close'
         close_col = 'c' if 'c' in self.ohlc.columns else 'close'
         df = self.ohlc[close_col].to_frame()
+        
+        # 验证df与X_all是否对齐
+        print(f"ohlc 长度: {len(self.ohlc)}, X_all 长度: {len(self.X_all)}")
+        if len(df) != len(self.X_all):
+            print(f"⚠️ 警告：ohlc与X_all长度不一致！这可能导致IC计算错误。")
+        
+        # 计算未来收益（用于IC decay分析）
         for i in space:
             df.loc[:,f'return+{i}'] = np.log(df.loc[:,close_col]).shift(-i) - np.log(df.loc[:,close_col])
             # df[f'return+{i}'] = np.where(df[f]>0,df[f'return+{i}']-fee, np.where(df[f]<0,df[f'return+{i}']+fee,0))

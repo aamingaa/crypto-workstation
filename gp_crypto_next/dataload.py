@@ -1009,6 +1009,8 @@ def data_prepare_coarse_grain_rolling(
                 col_data = window_bars[col]
                 n = len(col_data)
                 
+                # feature_dict[f'{col}'] = col_data
+
                 # 基础统计量
                 feature_dict[f'{col}_mean'] = col_data.mean()
                 feature_dict[f'{col}_std'] = col_data.std()
@@ -1134,10 +1136,17 @@ def data_prepare_coarse_grain_rolling(
     print(f"  特征数: {len(feature_names)}")
     print(f"{'='*60}\n")
     
+    # 构建 ohlc DataFrame（用于后续分析，如IC decay）
+    # 包含每个样本的价格信息，与 X_all 对齐
+    ohlc_aligned = pd.DataFrame({
+        'c': df_samples['t_price'],  # 当前价格
+        'close': df_samples['t_price']  # 兼容性别名
+    }, index=df_samples.index)
+    
     # 返回接口与 data_prepare 保持一致
     return (X_all, X_train, y_train, ret_train, X_test, y_test, ret_test,
             feature_names, open_train, open_test, close_train, close_test,
-            df_samples.index, coarse_bars)
+            df_samples.index, ohlc_aligned)
 
 
 def data_prepare_micro(sym: str, freq: str,
