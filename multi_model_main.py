@@ -322,10 +322,11 @@ class QuantTradingStrategy:
             print(f"共找到 {len(all_expressions)} 个唯一因子表达式")
             
             # 如果有性能指标，可以根据性能筛选因子
-            if 'fitness_sharpe_fixed_threshold_test' in factor_df.columns:
+            # if 'fitness_sharpe_fixed_threshold_test' in factor_df.columns:
+            if 'fitness_sharpe_test' in factor_df.columns:
                 print("检测到夏普比率指标，根据测试集表现筛选因子...")
                 # 按测试集夏普比率排序
-                factor_df_sorted = factor_df.sort_values('fitness_sharpe_fixed_threshold_test', ascending=False)
+                factor_df_sorted = factor_df.sort_values('fitness_sharpe_test', ascending=False)
                 # 取前N个因子
                 max_factors = min(self.config['max_factors'], len(factor_df_sorted))
                 self.factor_expressions = factor_df_sorted['expression'].head(max_factors).tolist()
@@ -673,13 +674,31 @@ class QuantTradingStrategy:
         """
         # 获取对应的开盘价和收盘价
         if data_range == 'train':
-            next_open = np.concatenate((self.open_train[1:], np.array([0])))
-            close = self.close_train
+            open_data = self.open_train
+            close_data = self.close_train
         elif data_range == 'test':
-            next_open = np.concatenate((self.open_test[1:], np.array([0])))
-            close = self.close_test
+            open_data = self.open_test
+            close_data = self.close_test
         else:
             raise ValueError(f"不支持的data_range: {data_range}")
+        
+        # 转换为 numpy 数组并确保正确的形状
+        if isinstance(open_data, pd.Series):
+            open_data = open_data.values
+        if isinstance(close_data, pd.Series):
+            close_data = close_data.values
+        
+        # 确保pos是1维数组
+        pos = np.asarray(pos).flatten()
+        
+        # 确保长度匹配
+        min_len = min(len(pos), len(open_data), len(close_data))
+        pos = pos[:min_len]
+        open_data = open_data[:min_len]
+        close_data = close_data[:min_len]
+        
+        next_open = np.concatenate((open_data[1:], np.array([close_data[-1]])))
+        close = close_data
         
         real_pos = pos
         pos_change = np.concatenate((np.array([0]), np.diff(real_pos)))
@@ -702,6 +721,13 @@ class QuantTradingStrategy:
         gain_loss = real_pos * rets - abs(pos_change) * fee
         pnl = gain_loss.cumsum()
         
+        # 调试信息
+        if np.any(np.isnan(gain_loss)) or np.any(np.isinf(gain_loss)):
+            print(f"    ⚠️  警告: gain_loss中有NaN或Inf值")
+            print(f"    real_pos stats: min={np.nanmin(real_pos):.4f}, max={np.nanmax(real_pos):.4f}, nan_count={np.sum(np.isnan(real_pos))}")
+            print(f"    rets stats: min={np.nanmin(rets):.4f}, max={np.nanmax(rets):.4f}, nan_count={np.sum(np.isnan(rets))}")
+            print(f"    which_price stats: min={np.nanmin(which_price_to_trade):.4f}, max={np.nanmax(which_price_to_trade):.4f}")
+        
         # 计算性能指标
         win_rate_bar = np.sum(gain_loss > 0) / len(gain_loss) if len(gain_loss) > 0 else 0
         avg_gain_bar = np.mean(gain_loss[gain_loss > 0]) if np.any(gain_loss > 0) else 0
@@ -714,9 +740,16 @@ class QuantTradingStrategy:
         
         # 计算最大回撤
         peak_values = np.maximum.accumulate(pnl)
-        drawdowns = (pnl - peak_values) / (peak_values + 1e-10)
-        max_drawdown = np.min(drawdowns)
-        Calmar_Ratio = annual_return / -max_drawdown if max_drawdown < 0 else np.inf
+        # 避免初始值为0导致的问题
+        peak_values = np.where(peak_values == 0, 1.0, peak_values)
+        drawdowns = (pnl - peak_values) / np.abs(peak_values)
+        max_drawdown = np.min(drawdowns) if len(drawdowns) > 0 else 0
+        
+        # 计算卡尔玛比率（避免除以0）
+        if max_drawdown < -0.0001:  # 有实际回撤
+            Calmar_Ratio = annual_return / abs(max_drawdown)
+        else:
+            Calmar_Ratio = np.inf if annual_return > 0 else 0
         
         metrics = {
             "Win Rate": win_rate_bar,
@@ -739,6 +772,12 @@ class QuantTradingStrategy:
         # 获取仓位
         train_pos = self.predictions[model_name]['train']
         test_pos = self.predictions[model_name]['test']
+        
+        # 调试信息
+        print(f"  训练集仓位: shape={train_pos.shape}, range=[{train_pos.min():.2f}, {train_pos.max():.2f}]")
+        print(f"  测试集仓位: shape={test_pos.shape}, range=[{test_pos.min():.2f}, {test_pos.max():.2f}]")
+        print(f"  训练集价格数据长度: open={len(self.open_train)}, close={len(self.close_train)}")
+        print(f"  测试集价格数据长度: open={len(self.open_test)}, close={len(self.close_test)}")
         
         # 回测
         train_pnl, train_metrics = self.real_trading_simulator(train_pos, 'train', self.config['fees_rate'])
@@ -958,7 +997,7 @@ if __name__ == "__main__":
     yaml_path = 'gp_crypto_next/coarse_grain_parameters.yaml'
     
     # 自动推断因子CSV文件名，或手动指定
-    factor_csv_path = 'ETHUSDT_15m_1_2025-01-01_2025-01-20_2025-01-20_2025-01-31.csv.gz'
+    factor_csv_path = 'gp_models/ETHUSDT_15m_1_2025-01-01_2025-01-20_2025-01-20_2025-01-31.csv.gz'
     
     # 可选：额外的策略配置（会覆盖默认值）
     strategy_config = {
