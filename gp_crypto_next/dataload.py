@@ -897,12 +897,13 @@ def data_prepare_coarse_grain_rolling(
         file_path: Optional[str] = None
     ):
     """
-    粗粒度特征 + 细粒度滚动的数据准备方法
+    粗粒度特征 + 细粒度滚动的数据准备方法（滑动窗口版本）
     
     核心思想：
     - 特征使用粗粒度周期（如2小时）聚合，减少噪声
-    - 特征窗口使用固定数量的粗粒度桶（如8个2小时 = 16小时）
-    - 预测起点以细粒度步长滚动（如10分钟），产生高频样本
+    - 特征窗口使用固定时间长度（如8个2小时 = 16小时）
+    - 预测起点以细粒度步长滚动（如15分钟），产生高频样本
+    - **关键改进**：每个滚动时间点都独立计算其专属的滑动窗口特征，避免多个样本重复使用相同的粗粒度桶
     - 预测目标是未来N个粗粒度周期的收益（如未来2小时）
     
     参数说明：
@@ -910,24 +911,31 @@ def data_prepare_coarse_grain_rolling(
     - freq: 用于兼容，实际预测周期由 y_train_ret_period * coarse_grain_period 决定
     - coarse_grain_period: 粗粒度特征桶周期，如 '2h', '1h', '30min'
     - feature_lookback_bars: 特征回溯的粗粒度桶数量（如8表示8个2h桶）
-    - rolling_step: 滚动步长，如 '10min', '5min'
+    - rolling_step: 滚动步长，如 '15min', '10min', '5min'
     - y_train_ret_period: 预测周期数（以coarse_grain_period为单位）
     
-    示例场景：
-    - coarse_grain_period='2h', feature_lookback_bars=8, rolling_step='10min'
-    - 在9:00时刻：用7:00-9:00前的8个2h桶（前一天17:00-当天9:00）做特征，预测9:00-11:00收益
-    - 在9:10时刻：用7:10-9:10前的8个2h桶做特征，预测9:10-11:10收益
+    示例场景（滑动窗口）：
+    - coarse_grain_period='2h', feature_lookback_bars=8, rolling_step='15min'
+    - 在9:00时刻：从原始数据提取 [前一天17:00, 9:00] 的数据，重采样为2h桶，计算特征，预测9:00-11:00收益
+    - 在9:15时刻：从原始数据提取 [前一天17:15, 9:15] 的数据，重采样为2h桶，计算特征，预测9:15-11:15收益
+    - 在9:30时刻：从原始数据提取 [前一天17:30, 9:30] 的数据，重采样为2h桶，计算特征，预测9:30-11:30收益
+    
+    优势：
+    - 每个时间点的特征窗口都是独立的，避免了数据泄露和样本相关性问题
+    - 滚动步长可以任意设置，不受粗粒度周期限制
+    - 特征更加精细，更能反映实时市场状态
     
     返回与 data_prepare 相同的接口
     """
     
     print(f"\n{'='*60}")
-    print(f"粗粒度特征 + 细粒度滚动数据准备")
+    print(f"粗粒度特征 + 细粒度滚动数据准备（滑动窗口版本）")
     print(f"品种: {sym}")
     print(f"粗粒度周期: {coarse_grain_period}")
     print(f"特征窗口: {feature_lookback_bars} × {coarse_grain_period} = {feature_lookback_bars * pd.Timedelta(coarse_grain_period).total_seconds() / 3600:.1f}小时")
     print(f"滚动步长: {rolling_step}")
     print(f"预测周期: {y_train_ret_period} × {coarse_grain_period}")
+    print(f"注意：每个时间点都会独立计算其滑动窗口特征，避免重复使用相同的粗粒度桶")
     print(f"{'='*60}\n")
     
     # ========== 第一步：读取原始数据（细粒度） ==========
@@ -942,18 +950,14 @@ def data_prepare_coarse_grain_rolling(
     z_raw = z_raw[(z_raw.index >= extended_start) & (z_raw.index <= pd.to_datetime(end_date_test))]
     print(f"读取原始数据: {len(z_raw)} 行，时间范围 {z_raw.index.min()} 至 {z_raw.index.max()}")
     
-    # ========== 第二步：生成粗粒度OHLCV桶 ==========
-    print(f"\n生成粗粒度OHLCV桶（周期={coarse_grain_period}）...")
+    # ========== 第二步：生成粗粒度OHLCV桶（仅用于标签计算） ==========
+    print(f"\n生成粗粒度OHLCV桶（周期={coarse_grain_period}，用于标签计算）...")
     coarse_bars = resample(z_raw, coarse_grain_period)
     print(f"粗粒度桶数量: {len(coarse_bars)}")
     
-    # ========== 第三步：为粗粒度桶提取特征 ==========
-    print(f"\n为粗粒度桶提取特征...")
-    base_feature = originalFeature.BaseFeature(coarse_bars.copy())
-    coarse_features_df = base_feature.init_feature_df
-    print(f"粗粒度特征维度: {coarse_features_df.shape}")
+    # 注意：不再预先计算所有桶的特征，而是为每个滚动时间点动态计算滑动窗口特征
     
-    # ========== 第四步：生成细粒度滚动时间网格 ==========
+    # ========== 第三步：生成细粒度滚动时间网格 ==========
     print(f"\n生成细粒度滚动时间网格（步长={rolling_step}）...")
     
     # 从训练集开始到测试集结束，按rolling_step生成时间点
@@ -964,8 +968,9 @@ def data_prepare_coarse_grain_rolling(
     fine_grain_timestamps = pd.date_range(start=grid_start, end=grid_end, freq=rolling_step)
     print(f"生成 {len(fine_grain_timestamps)} 个时间点")
     
-    # ========== 第五步：为每个细粒度时间点提取特征和标签 ==========
-    print(f"\n为每个时间点提取特征和标签...")
+    # ========== 第四步：为每个细粒度时间点提取滑动窗口特征和标签 ==========
+    print(f"\n为每个时间点提取滑动窗口特征和标签...")
+    print(f"注意：采用滑动窗口方案，每个时间点都独立计算特征")
     
     samples = []
     valid_count = 0
@@ -978,39 +983,54 @@ def data_prepare_coarse_grain_rolling(
         if idx % 50 == 0:
             print(f"  处理进度: {idx}/{len(fine_grain_timestamps)} ({100*idx/len(fine_grain_timestamps):.1f}%)")
         
-        # 确定特征窗口：t时刻前的 feature_lookback_bars 个粗粒度桶
+        # ========== 滑动窗口特征提取 ==========
+        # 确定特征窗口：t时刻前的 feature_lookback_bars * coarse_grain_period 时间
         feature_window_start = t - feature_window_timedelta
         feature_window_end = t
         
-        if feature_window_start < coarse_features_df.index.min():
+        # 检查数据范围
+        if feature_window_start < z_raw.index.min():
             skipped_count += 1
             continue
         
-        if feature_window_end > coarse_features_df.index.max():
+        if feature_window_end > z_raw.index.max():
             skipped_count += 1
             continue
         
-        # 筛选特征窗口内的粗粒度桶
-        window_mask = (coarse_features_df.index >= feature_window_start) & \
-                     (coarse_features_df.index < feature_window_end)
-        window_bars = coarse_features_df[window_mask]
+        # 从原始数据中提取这个时间点专属的窗口数据
+        window_raw_data = z_raw[(z_raw.index >= feature_window_start) & 
+                                (z_raw.index < feature_window_end)]
         
-        # 检查是否有足够的历史数据
-        # if len(window_bars) < feature_lookback_bars * 0.8:  # 容忍20%缺失
-        #     skipped_count += 1
-        #     continue
+        if len(window_raw_data) < 10:  # 至少需要一些数据点
+            skipped_count += 1
+            continue
         
-        # 对窗口内的粗粒度特征进行聚合（多种统计量）
+        # 对窗口数据进行粗粒度重采样
+        window_coarse_bars = resample(window_raw_data, coarse_grain_period)
+        
+        # 检查是否有足够的粗粒度桶
+        if len(window_coarse_bars) < feature_lookback_bars * 0.5:  # 容忍50%缺失
+            skipped_count += 1
+            continue
+        
+        # 为这个窗口的粗粒度桶提取特征
+        try:
+            base_feature = originalFeature.BaseFeature(window_coarse_bars.copy())
+            window_features_df = base_feature.init_feature_df
+        except Exception as e:
+            # 特征提取失败，跳过这个样本
+            skipped_count += 1
+            continue
+        
+        # 对窗口内的特征进行聚合（多种统计量）
         feature_dict = {}
-        for col in window_bars.columns:
+        for col in window_features_df.columns:
             if col in ['c', 'v', 'o', 'h', 'l', 'vol']:
                 continue
-            if pd.api.types.is_numeric_dtype(window_bars[col]):
-                col_data = window_bars[col]
+            if pd.api.types.is_numeric_dtype(window_features_df[col]):
+                col_data = window_features_df[col]
                 n = len(col_data)
                 
-                # feature_dict[f'{col}'] = col_data
-
                 # 基础统计量
                 feature_dict[f'{col}_mean'] = col_data.mean()
                 feature_dict[f'{col}_std'] = col_data.std()
@@ -1026,14 +1046,6 @@ def data_prepare_coarse_grain_rolling(
                 feature_dict[f'{col}_median'] = col_data.median()  # 中位数
                 feature_dict[f'{col}_q25'] = col_data.quantile(0.25) if n > 0 else 0  # 25%分位数
                 feature_dict[f'{col}_q75'] = col_data.quantile(0.75) if n > 0 else 0  # 75%分位数
-                
-                # 变化率（趋势）
-                # if n > 1:
-                #     feature_dict[f'{col}_change'] = col_data.iloc[-1] - col_data.iloc[0]  # 绝对变化
-                #     feature_dict[f'{col}_pct_change'] = (col_data.iloc[-1] / col_data.iloc[0] - 1) if col_data.iloc[0] != 0 else 0  # 相对变化
-                # else:
-                #     feature_dict[f'{col}_change'] = 0
-                #     feature_dict[f'{col}_pct_change'] = 0
         
         # 计算t时刻的价格（用于标签计算）
         # 找到t时刻最近的粗粒度桶

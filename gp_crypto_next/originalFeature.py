@@ -202,7 +202,8 @@ def define_base_fields():
 
 
 def calculate_base_fields(data, base_fields, apply_norm=True, rolling_zscore_window=2000):
-    for field, formula in tqdm(base_fields.items(), desc="Processing"):
+    # for field, formula in tqdm(base_fields.items(), desc="Processing"):
+    for field, formula in base_fields.items():
         if apply_norm:
             data[field] = norm1(formula(data), rolling_zscore_window)
         else:
@@ -290,11 +291,11 @@ class BaseFeature:
         init_ohlcva_df = init_ohlcva_df.astype(np.float64)
 
         self.rolling_zscore_window: int = 2000
-        print('feature 定义')
+        # print('feature 定义')
         self.base_fields = define_base_fields()
-        print('init_feature 计算')
+        # print('init_feature 计算')
         self.init_feature_df = self._call(init_ohlcva_df)
-        print('init_feature 完成')
+        # print('init_feature 完成')
 
 
 
