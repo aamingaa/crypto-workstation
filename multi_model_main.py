@@ -35,6 +35,9 @@ import os
 import yaml
 warnings.filterwarnings('ignore')
 
+# 导入triple_barrier模块
+from label.triple_barrier import get_barrier, get_metalabel
+
 # 设置matplotlib中文字体支持（Mac系统）
 import platform
 
@@ -461,6 +464,104 @@ class QuantTradingStrategy:
             self.config['corr_threshold'])
         
         self.selected_factors = selected_factors
+        
+        return self
+    
+    def generate_triple_barrier_labels(self, pt_sl=[2, 2], max_holding=[0, 4], side_prediction=None):
+        """
+        生成 Triple Barrier 标签
+        
+        Args:
+            pt_sl (list): [profit_taking_multiplier, stop_loss_multiplier]
+                         例如 [2, 2] 表示止盈和止损都是目标波动率的2倍
+            max_holding (list): [days, hours] 最大持仓时间
+                               例如 [0, 4] 表示最多持有4小时
+            side_prediction (pd.Series, optional): 预测方向，1=做多，-1=做空
+                                                   如果为None，默认都是做多
+        
+        Returns:
+            self
+        """
+        print("正在生成 Triple Barrier 标签...")
+        
+        # 准备价格序列（需要有时间索引）
+        if self.z_index is None or self.ohlc is None:
+            raise ValueError("需要先加载数据（包含时间索引和OHLC数据）")
+        
+        # 创建带时间索引的收盘价序列
+        close_series = pd.Series(
+            data=self.ohlc[:, 3],  # close price
+            index=pd.to_datetime(self.z_index)
+        )
+        
+        # 计算目标波动率（使用滚动标准差）
+        rolling_window = self.data_config.get('rolling_window', 2000)
+        target_volatility = close_series.pct_change().rolling(
+            window=min(rolling_window, len(close_series)//2)
+        ).std()
+        target_volatility = target_volatility.fillna(method='bfill')
+        
+        # 生成入场点（所有时间点）
+        enter_points = close_series.index
+        
+        # 如果有方向预测，使用预测方向；否则默认做多
+        if side_prediction is None:
+            side_series = pd.Series(1.0, index=enter_points)
+        else:
+            side_series = side_prediction
+        
+        # 调用 triple_barrier
+        barrier_results = get_barrier(
+            close=close_series,
+            enter=enter_points,
+            pt_sl=pt_sl,
+            max_holding=max_holding,
+            target=target_volatility,
+            side=side_series
+        )
+        
+        # 生成 meta-label（1=盈利，0=亏损）
+        meta_labels = get_metalabel(barrier_results)
+        
+        # 存储结果
+        self.barrier_results = barrier_results
+        self.meta_labels = meta_labels
+        
+        print(f"Triple Barrier 标签生成完成")
+        print(f"总交易次数: {len(barrier_results)}")
+        print(f"盈利交易: {(meta_labels == 1).sum()} ({(meta_labels == 1).sum()/len(meta_labels):.2%})")
+        print(f"亏损交易: {(meta_labels == 0).sum()} ({(meta_labels == 0).sum()/len(meta_labels):.2%})")
+        print(f"平均收益: {barrier_results['ret'].mean():.4f}")
+        print(f"收益标准差: {barrier_results['ret'].std():.4f}")
+        
+        return self
+    
+    def use_triple_barrier_as_y(self):
+        """
+        使用 Triple Barrier 的收益作为训练目标（替代原来的固定周期收益）
+        
+        注意：这会改变 y_train 和 y_test
+        """
+        print("正在使用 Triple Barrier 收益作为训练目标...")
+        
+        if not hasattr(self, 'barrier_results'):
+            raise ValueError("请先运行 generate_triple_barrier_labels()")
+        
+        # 将 barrier 收益对齐到原始索引
+        barrier_ret = self.barrier_results['ret'].values
+        
+        # 更新训练目标
+        train_len = len(self.y_train)
+        self.y_train = barrier_ret[:train_len].reshape(-1, 1)
+        self.y_test = barrier_ret[train_len:len(self.y_train)+len(self.y_test)].reshape(-1, 1)
+        
+        # 同时更新 ret_train 和 ret_test
+        self.ret_train = self.y_train.flatten()
+        self.ret_test = self.y_test.flatten()
+        
+        print(f"已替换训练目标为 Triple Barrier 收益")
+        print(f"训练集收益范围: [{self.ret_train.min():.4f}, {self.ret_train.max():.4f}]")
+        print(f"测试集收益范围: [{self.ret_test.min():.4f}, {self.ret_test.max():.4f}]")
         
         return self
     
@@ -1017,6 +1118,29 @@ if __name__ == "__main__":
     # 运行完整流程
     # weight_method 可选: 'equal' (等权重) 或 'sharpe' (基于夏普比率)
     strategy.run_full_pipeline(weight_method='equal')
+    
+    # ========== 可选：使用 Triple Barrier 标注 ==========
+    # 在数据加载后、模型训练前，可以生成 Triple Barrier 标签
+    # 
+    # 示例：在因子筛选后添加 Triple Barrier
+    # strategy = (QuantTradingStrategy.from_yaml(yaml_path, factor_csv_path, strategy_config)
+    #            .load_data_from_dataload()
+    #            .load_factor_expressions()
+    #            .evaluate_factor_expressions()
+    #            .normalize_factors()
+    #            .select_factors()
+    #            # 添加 Triple Barrier 标注
+    #            .generate_triple_barrier_labels(
+    #                pt_sl=[2, 2],         # 止盈/止损倍数
+    #                max_holding=[0, 4]    # 最大持有4小时
+    #            )
+    #            # 可选：使用 Triple Barrier 的收益替代固定周期收益
+    #            # .use_triple_barrier_as_y()
+    #            .prepare_training_data()
+    #            .train_models()
+    #            .make_predictions(weight_method='equal')
+    #            .backtest_all_models()
+    # )
     
     # ========== 方式2: 手动配置（如果不用YAML） ==========
     # data_config = {
