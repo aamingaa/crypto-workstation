@@ -369,6 +369,7 @@ for date in date_list:
     df = pd.read_csv(file_path)
     # df['date'] = date
     df_list.append(df)
+    print(f'df{len(df)}, read df_list {len(df_list)} done')
 
 raw_data = pd.concat(df_list)
 # raw_data = pd.read_csv(file_path)
