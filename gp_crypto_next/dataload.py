@@ -48,6 +48,13 @@ from pipeline.trading_pipeline import TradingPipeline
 from multiprocessing import Pool, cpu_count
 from functools import partial
 
+# 尝试导入 tqdm 用于进度条显示
+try:
+    from tqdm import tqdm
+    HAS_TQDM = True
+except ImportError:
+    HAS_TQDM = False
+
 
 class DataFrequency(Enum):
     """数据频率枚举"""
@@ -1116,10 +1123,22 @@ def data_prepare_coarse_grain_rolling(
         with Pool(processes=n_cores) as pool:
             results = []
             # 使用imap_unordered提高效率，并显示进度
-            for idx, result in enumerate(pool.imap_unordered(_process_single_timestamp, args_list, chunksize=10)):
-                results.append(result)
-                if idx % 100 == 0:
-                    print(f"  处理进度: {idx}/{len(fine_grain_timestamps)} ({100*idx/len(fine_grain_timestamps):.1f}%)")
+            if HAS_TQDM:
+                # 使用tqdm进度条（更友好）
+                iterator = tqdm(
+                    pool.imap_unordered(_process_single_timestamp, args_list, chunksize=10),
+                    total=len(fine_grain_timestamps),
+                    desc="并行处理",
+                    unit="样本"
+                )
+                for result in iterator:
+                    results.append(result)
+            else:
+                # 降级为简单的百分比显示
+                for idx, result in enumerate(pool.imap_unordered(_process_single_timestamp, args_list, chunksize=10)):
+                    results.append(result)
+                    if idx % 100 == 0:
+                        print(f"  处理进度: {idx}/{len(fine_grain_timestamps)} ({100*idx/len(fine_grain_timestamps):.1f}%)")
         
         # 收集成功的样本
         samples = [sample for sample, success in results if success]
@@ -1136,8 +1155,12 @@ def data_prepare_coarse_grain_rolling(
         valid_count = 0
         skipped_count = 0
 
-        for idx, t in enumerate(fine_grain_timestamps):
-            if idx % 50 == 0:
+        # 选择进度显示方式
+        iterator = tqdm(fine_grain_timestamps, desc="串行处理", unit="样本") if HAS_TQDM else fine_grain_timestamps
+        
+        for idx, t in enumerate(iterator):
+            # 如果没有tqdm，显示简单进度
+            if not HAS_TQDM and idx % 50 == 0:
                 print(f"  处理进度: {idx}/{len(fine_grain_timestamps)} ({100*idx/len(fine_grain_timestamps):.1f}%)")
             
             # 调用同样的处理函数
