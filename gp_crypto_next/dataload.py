@@ -45,6 +45,8 @@ from features.tail_features import TailFeatureExtractor
 from features.bucketed_flow_features import BucketedFlowFeatureExtractor
 from features.microstructure_extractor import MicrostructureFeatureExtractor
 from pipeline.trading_pipeline import TradingPipeline
+from multiprocessing import Pool, cpu_count
+from functools import partial
 
 
 class DataFrequency(Enum):
@@ -878,6 +880,126 @@ def data_thick_rolling_prepare(sym, freq, start_date_train, end_date_train, star
     return X_all, X_dataset_train, y_dataset_train,ret_dataset_train, X_dataset_test, y_dataset_test,ret_dataset_test, feature_names,open_train,open_test,close_train,close_test, z.index ,ohlcva_df
 
 
+def _compute_vectorized_labels(timestamps, z_raw, prediction_horizon_td):
+    """
+    向量化计算标签，避免逐个查询价格
+    
+    返回: DataFrame with columns ['timestamp', 't_price', 't_future_price', 'return_f']
+    """
+    # 将z_raw的收盘价转换为Series，方便reindex
+    close_prices = z_raw['c']
+    
+    # 批量获取当前时刻和未来时刻的价格
+    timestamps_series = pd.Series(timestamps)
+    future_timestamps = timestamps_series + prediction_horizon_td
+    
+    # reindex来匹配时间点（method='ffill'确保找到最近的价格）
+    t_prices = close_prices.reindex(timestamps, method='ffill')
+    t_future_prices = close_prices.reindex(future_timestamps, method='ffill')
+    
+    # 计算对数收益
+    log_returns = np.log(t_future_prices.values / t_prices.values)
+    
+    # 构建DataFrame
+    labels_df = pd.DataFrame({
+        'timestamp': timestamps,
+        't_price': t_prices.values,
+        't_future_price': t_future_prices.values,
+        'return_f': log_returns
+    })
+    
+    return labels_df
+
+
+def _process_single_timestamp(args):
+    """
+    处理单个时间点的特征提取和标签计算（用于并行处理）
+    
+    返回: (sample_dict, success_flag)
+    """
+    (t, z_raw, coarse_grain_period, feature_window_timedelta, 
+     feature_lookback_bars, prediction_horizon_td) = args
+    
+    try:
+        # ========== 滑动窗口特征提取 ==========
+        feature_window_start = t - feature_window_timedelta
+        feature_window_end = t
+        
+        # 检查数据范围
+        if feature_window_start < z_raw.index.min():
+            return None, False
+        
+        if feature_window_end > z_raw.index.max():
+            return None, False
+        
+        if t + prediction_horizon_td >= z_raw.index.max():
+            return None, False
+        
+        # 从原始数据中提取这个时间点专属的窗口数据
+        window_raw_data = z_raw[(z_raw.index >= feature_window_start) & 
+                                (z_raw.index < feature_window_end)]
+        
+        if len(window_raw_data) < 10:
+            return None, False
+        
+        # 对窗口数据进行粗粒度重采样
+        window_coarse_bars = resample(window_raw_data, coarse_grain_period)
+        
+        # 检查是否有足够的粗粒度桶
+        if len(window_coarse_bars) < feature_lookback_bars * 0.5:
+            return None, False
+        
+        # 为这个窗口的粗粒度桶提取特征
+        base_feature = originalFeature.BaseFeature(window_coarse_bars.copy())
+        window_features_df = base_feature.init_feature_df
+        
+        # 对窗口内的特征进行聚合（多种统计量）
+        feature_dict = {}
+        for col in window_features_df.columns:
+            if col in ['c', 'v', 'o', 'h', 'l', 'vol']:
+                continue
+            if pd.api.types.is_numeric_dtype(window_features_df[col]):
+                col_data = window_features_df[col]
+                n = len(col_data)
+                
+                # 基础统计量
+                feature_dict[f'{col}_mean'] = col_data.mean()
+                feature_dict[f'{col}_std'] = col_data.std()
+                feature_dict[f'{col}_max'] = col_data.max()
+                feature_dict[f'{col}_min'] = col_data.min()
+                feature_dict[f'{col}_last'] = col_data.iloc[-1] if n > 0 else 0
+                
+                # 高阶统计量
+                feature_dict[f'{col}_skew'] = col_data.skew() if n > 2 else 0
+                feature_dict[f'{col}_kurt'] = col_data.kurtosis() if n > 3 else 0
+                
+                # 分位数
+                feature_dict[f'{col}_median'] = col_data.median()
+                feature_dict[f'{col}_q25'] = col_data.quantile(0.25) if n > 0 else 0
+                feature_dict[f'{col}_q75'] = col_data.quantile(0.75) if n > 0 else 0
+        
+        # 计算标签（价格和收益）
+        t_price = z_raw.loc[t, 'c']
+        t_future = t + prediction_horizon_td
+        t_future_price = z_raw.loc[t_future, 'c']
+        log_return = np.log(t_future_price / t_price)
+        
+        # 记录样本
+        sample = {
+            'timestamp': t,
+            't_price': t_price,
+            't_future_price': t_future_price,
+            'return_f': log_return,
+            **feature_dict
+        }
+        
+        return sample, True
+        
+    except Exception as e:
+        # 特征提取失败
+        return None, False
+
+
 def data_prepare_coarse_grain_rolling(
         sym: str, 
         freq: str,  # 预测周期，例如 '2h' 表示预测未来2小时收益
@@ -894,7 +1016,9 @@ def data_prepare_coarse_grain_rolling(
         data_dir: str = '',
         read_frequency: str = '',
         timeframe: str = '',
-        file_path: Optional[str] = None
+        file_path: Optional[str] = None,
+        use_parallel: bool = True,  # 是否使用并行处理
+        n_jobs: int = -1  # 并行进程数，-1表示使用所有CPU核心
     ):
     """
     粗粒度特征 + 细粒度滚动的数据准备方法（滑动窗口版本）
@@ -972,110 +1096,62 @@ def data_prepare_coarse_grain_rolling(
     print(f"\n为每个时间点提取滑动窗口特征和标签...")
     print(f"注意：采用滑动窗口方案，每个时间点都独立计算特征")
     
-    samples = []
-    valid_count = 0
-    skipped_count = 0
-    
     coarse_period_td = pd.Timedelta(coarse_grain_period)
-    # prediction_horizon_td = rolling_step * y_train_ret_period
     prediction_horizon_td = coarse_period_td
-
-    for idx, t in enumerate(fine_grain_timestamps):
-        if idx % 50 == 0:
-            print(f"  处理进度: {idx}/{len(fine_grain_timestamps)} ({100*idx/len(fine_grain_timestamps):.1f}%)")
-        
-        # ========== 滑动窗口特征提取 ==========
-        # 确定特征窗口：t时刻前的 feature_lookback_bars * coarse_grain_period 时间
-        feature_window_start = t - feature_window_timedelta
-        feature_window_end = t
-        
-        # 检查数据范围
-        if feature_window_start < z_raw.index.min():
-            skipped_count += 1
-            continue
-        
-        if feature_window_end > z_raw.index.max():
-            skipped_count += 1
-            continue
-        
-        if t + prediction_horizon_td >= z_raw.index.max():
-            skipped_count += 1
-            continue
-        
-        # 从原始数据中提取这个时间点专属的窗口数据
-        window_raw_data = z_raw[(z_raw.index >= feature_window_start) & 
-                                (z_raw.index < feature_window_end)]
-        
-        if len(window_raw_data) < 10:  # 至少需要一些数据点
-            skipped_count += 1
-            continue
-        
-        # 对窗口数据进行粗粒度重采样
-        window_coarse_bars = resample(window_raw_data, coarse_grain_period)
-        
-        # 检查是否有足够的粗粒度桶
-        if len(window_coarse_bars) < feature_lookback_bars * 0.5:  # 容忍50%缺失
-            skipped_count += 1
-            continue
-        
-        # 为这个窗口的粗粒度桶提取特征
-        try:
-            base_feature = originalFeature.BaseFeature(window_coarse_bars.copy())
-            window_features_df = base_feature.init_feature_df
-        except Exception as e:
-            # 特征提取失败，跳过这个样本
-            skipped_count += 1
-            continue
-        
-        # 对窗口内的特征进行聚合（多种统计量）
-        feature_dict = {}
-        for col in window_features_df.columns:
-            if col in ['c', 'v', 'o', 'h', 'l', 'vol']:
-                continue
-            if pd.api.types.is_numeric_dtype(window_features_df[col]):
-                col_data = window_features_df[col]
-                n = len(col_data)
-                
-                # 基础统计量
-                feature_dict[f'{col}_mean'] = col_data.mean()
-                feature_dict[f'{col}_std'] = col_data.std()
-                feature_dict[f'{col}_max'] = col_data.max()
-                feature_dict[f'{col}_min'] = col_data.min()
-                feature_dict[f'{col}_last'] = col_data.iloc[-1] if n > 0 else 0
-                
-                # 高阶统计量
-                feature_dict[f'{col}_skew'] = col_data.skew() if n > 2 else 0  # 偏度（需要至少3个点）
-                feature_dict[f'{col}_kurt'] = col_data.kurtosis() if n > 3 else 0  # 峰度（需要至少4个点）
-                
-                # 分位数（更稳健）
-                feature_dict[f'{col}_median'] = col_data.median()  # 中位数
-                feature_dict[f'{col}_q25'] = col_data.quantile(0.25) if n > 0 else 0  # 25%分位数
-                feature_dict[f'{col}_q75'] = col_data.quantile(0.75) if n > 0 else 0  # 75%分位数
-        
-        # 计算t时刻的价格（用于标签计算）
-        # 使用原始细粒度数据来获取准确的价格，而不是粗粒度桶
-        # 这样每个15分钟的时间点都能获得独立的价格，避免多个样本使用相同价格
-        t_price = z_raw.loc[t, 'c']
-
-         # 计算t+prediction_horizon时刻的价格
-        t_future = t + prediction_horizon_td
-        t_future_price = z_raw.loc[t_future, 'c']
-        
-        # 计算对数收益
-        log_return = np.log(t_future_price / t_price)
-        
-        # 记录样本
-        sample = {
-            'timestamp': t,
-            't_price': t_price,
-            't_future_price': t_future_price,
-            'return_f': log_return,
-            **feature_dict
-        }
-        samples.append(sample)
-        valid_count += 1
     
-    print(f"\n✓ 生成样本完成: 有效 {valid_count} 个，跳过 {skipped_count} 个")
+    # 选择处理模式：并行或串行
+    if use_parallel:
+        # ========== 并行处理模式 ==========
+        n_cores = cpu_count() if n_jobs == -1 else n_jobs
+        print(f"🚀 使用并行处理模式，进程数: {n_cores}")
+        
+        # 准备参数列表
+        args_list = [
+            (t, z_raw, coarse_grain_period, feature_window_timedelta, 
+             feature_lookback_bars, prediction_horizon_td)
+            for t in fine_grain_timestamps
+        ]
+        
+        # 使用进程池并行处理
+        with Pool(processes=n_cores) as pool:
+            results = []
+            # 使用imap_unordered提高效率，并显示进度
+            for idx, result in enumerate(pool.imap_unordered(_process_single_timestamp, args_list, chunksize=10)):
+                results.append(result)
+                if idx % 100 == 0:
+                    print(f"  处理进度: {idx}/{len(fine_grain_timestamps)} ({100*idx/len(fine_grain_timestamps):.1f}%)")
+        
+        # 收集成功的样本
+        samples = [sample for sample, success in results if success]
+        valid_count = len(samples)
+        skipped_count = len(results) - valid_count
+        
+        print(f"\n✓ 并行处理完成: 有效 {valid_count} 个，跳过 {skipped_count} 个")
+    
+    else:
+        # ========== 串行处理模式（原始方式，用于调试）==========
+        print(f"使用串行处理模式（单线程）")
+        
+        samples = []
+        valid_count = 0
+        skipped_count = 0
+
+        for idx, t in enumerate(fine_grain_timestamps):
+            if idx % 50 == 0:
+                print(f"  处理进度: {idx}/{len(fine_grain_timestamps)} ({100*idx/len(fine_grain_timestamps):.1f}%)")
+            
+            # 调用同样的处理函数
+            args = (t, z_raw, coarse_grain_period, feature_window_timedelta, 
+                   feature_lookback_bars, prediction_horizon_td)
+            sample, success = _process_single_timestamp(args)
+            
+            if success:
+                samples.append(sample)
+                valid_count += 1
+            else:
+                skipped_count += 1
+        
+        print(f"\n✓ 串行处理完成: 有效 {valid_count} 个，跳过 {skipped_count} 个")
     
     # ========== 第六步：构建DataFrame并处理 ==========
     df_samples = pd.DataFrame(samples)
