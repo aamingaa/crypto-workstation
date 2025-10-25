@@ -888,7 +888,7 @@ def data_prepare_coarse_grain_rolling(
         coarse_grain_period: str = '2h',  # 粗粒度特征桶周期
         feature_lookback_bars: int = 8,    # 特征回溯桶数（8个2h = 16小时）
         rolling_step: str = '10min',       # 滚动步长
-        y_train_ret_period: int = 1,       # 预测周期（以coarse_grain为单位，1表示1个2h）
+        y_train_ret_period: int = 8,       # 预测周期（以coarse_grain为单位，1表示1个2h）
         rolling_w: int = 2000,
         output_format: str = 'ndarry',
         data_dir: str = '',
@@ -977,8 +977,9 @@ def data_prepare_coarse_grain_rolling(
     skipped_count = 0
     
     coarse_period_td = pd.Timedelta(coarse_grain_period)
-    prediction_horizon_td = coarse_period_td * y_train_ret_period
-    
+    # prediction_horizon_td = rolling_step * y_train_ret_period
+    prediction_horizon_td = coarse_period_td
+
     for idx, t in enumerate(fine_grain_timestamps):
         if idx % 50 == 0:
             print(f"  处理进度: {idx}/{len(fine_grain_timestamps)} ({100*idx/len(fine_grain_timestamps):.1f}%)")
@@ -994,6 +995,10 @@ def data_prepare_coarse_grain_rolling(
             continue
         
         if feature_window_end > z_raw.index.max():
+            skipped_count += 1
+            continue
+        
+        if t + prediction_horizon_td >= z_raw.index.max():
             skipped_count += 1
             continue
         
@@ -1048,22 +1053,13 @@ def data_prepare_coarse_grain_rolling(
                 feature_dict[f'{col}_q75'] = col_data.quantile(0.75) if n > 0 else 0  # 75%分位数
         
         # 计算t时刻的价格（用于标签计算）
-        # 找到t时刻最近的粗粒度桶
-        closest_bar_idx = coarse_bars.index.searchsorted(t, side='right') - 1
-        if closest_bar_idx < 0 or closest_bar_idx >= len(coarse_bars):
-            skipped_count += 1
-            continue
-        
-        t_price = coarse_bars.iloc[closest_bar_idx]['c']
-        
-        # 计算t+prediction_horizon时刻的价格
+        # 使用原始细粒度数据来获取准确的价格，而不是粗粒度桶
+        # 这样每个15分钟的时间点都能获得独立的价格，避免多个样本使用相同价格
+        t_price = z_raw.loc[t, 'c']
+
+         # 计算t+prediction_horizon时刻的价格
         t_future = t + prediction_horizon_td
-        future_bar_idx = coarse_bars.index.searchsorted(t_future, side='right') - 1
-        if future_bar_idx < 0 or future_bar_idx >= len(coarse_bars):
-            skipped_count += 1
-            continue
-        
-        t_future_price = coarse_bars.iloc[future_bar_idx]['c']
+        t_future_price = z_raw.loc[t_future, 'c']
         
         # 计算对数收益
         log_return = np.log(t_future_price / t_price)
