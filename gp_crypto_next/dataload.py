@@ -969,11 +969,11 @@ def _process_single_timestamp(args):
                 col_data = window_features_df[col]
                 n = len(col_data)
                 
-                # 基础统计量
-                feature_dict[f'{col}_mean'] = col_data.mean()
-                feature_dict[f'{col}_std'] = col_data.std()
-                feature_dict[f'{col}_max'] = col_data.max()
-                feature_dict[f'{col}_min'] = col_data.min()
+                # 基础统计量（使用numpy加速）
+                feature_dict[f'{col}_mean'] = np.mean(col_data)
+                feature_dict[f'{col}_std'] = np.std(col_data)
+                feature_dict[f'{col}_max'] = np.max(col_data)
+                feature_dict[f'{col}_min'] = np.min(col_data)
                 feature_dict[f'{col}_last'] = col_data.iloc[-1] if n > 0 else 0
                 
                 # 高阶统计量
@@ -981,9 +981,9 @@ def _process_single_timestamp(args):
                 feature_dict[f'{col}_kurt'] = col_data.kurtosis() if n > 3 else 0
                 
                 # 分位数
-                feature_dict[f'{col}_median'] = col_data.median()
-                feature_dict[f'{col}_q25'] = col_data.quantile(0.25) if n > 0 else 0
-                feature_dict[f'{col}_q75'] = col_data.quantile(0.75) if n > 0 else 0
+                feature_dict[f'{col}_median'] = np.median(col_data)
+                feature_dict[f'{col}_q25'] = np.percentile(col_data, 25) if n > 0 else 0
+                feature_dict[f'{col}_q75'] = np.percentile(col_data, 75) if n > 0 else 0
         
         # 计算标签（价格和收益）
         t_price = z_raw.loc[t, 'c']
@@ -1007,6 +1007,112 @@ def _process_single_timestamp(args):
         return None, False
 
 
+def _process_timestamp_with_multi_offset_precompute(args):
+    """
+    正确的优化方案：多组偏移的粗粒度预计算
+    
+    优化思路：
+    1. 预计算N组不同偏移的2h桶（N = 2h/rolling_step）
+    2. 每个时间点根据其分钟偏移选择对应的组
+    3. 从选定组的预计算特征中选择窗口桶
+    
+    关键：
+    - 9:15时刻 → 选择offset=15min的组 → 使用边界[1:15, 3:15, 5:15, 7:15, 9:15]的桶
+    - 9:30时刻 → 选择offset=30min的组 → 使用边界[1:30, 3:30, 5:30, 7:30, 9:30]的桶
+    - 完美对齐，无精度损失！
+    
+    返回: (sample_dict, success_flag)
+    """
+    (t, z_raw, coarse_features_dict, rolling_step_minutes,
+     feature_window_timedelta, feature_lookback_bars, prediction_horizon_td) = args
+    
+    try:
+        # 计算当前时间点的分钟偏移（相对于整点）
+        minute_offset = t.minute % int(rolling_step_minutes)
+        offset = pd.Timedelta(minutes=minute_offset)
+        
+        # 选择对应的预计算特征组
+        # if offset not in coarse_features_dict:
+        #     # 找最接近的offset
+        #     available_offsets = sorted(coarse_features_dict.keys())
+        #     offset = min(available_offsets, key=lambda x: abs((x - offset).total_seconds()))
+        
+        coarse_features_df = coarse_features_dict[offset]
+        
+        # 计算窗口范围
+        feature_window_start = t - feature_window_timedelta
+        feature_window_end = t
+        
+        # 边界检查
+        if (feature_window_start < coarse_features_df.index.min() or 
+            feature_window_end > coarse_features_df.index.max() or
+            t + prediction_horizon_td >= z_raw.index.max()):
+            return None, False
+        
+        # ========== 关键：从选定组的预计算特征中选择窗口 ==========
+        window_coarse_features = coarse_features_df[
+            (coarse_features_df.index >= feature_window_start) & 
+            (coarse_features_df.index < feature_window_end)
+        ]
+        
+        # 检查是否有足够的桶
+        if len(window_coarse_features) < feature_lookback_bars * 0.5:
+            return None, False
+        
+        # ========== 对窗口内的粗粒度桶特征进行聚合统计 ==========
+        feature_dict = {}
+        
+        # 排除基础价格列
+        numeric_cols = window_coarse_features.select_dtypes(include=[np.number]).columns
+        exclude_cols = {'c', 'v', 'o', 'h', 'l', 'vol'}
+        feature_cols = [col for col in numeric_cols if col not in exclude_cols]
+        
+        for col in feature_cols:
+            col_data = window_coarse_features[col]
+            n = len(col_data)
+            
+            if n > 0:
+                # 使用 numpy 加速统计计算
+                feature_dict[f'{col}_mean'] = np.mean(col_data)
+                feature_dict[f'{col}_std'] = np.std(col_data)
+                feature_dict[f'{col}_max'] = np.max(col_data)
+                feature_dict[f'{col}_min'] = np.min(col_data)
+                feature_dict[f'{col}_last'] = col_data.iloc[-1]
+                feature_dict[f'{col}_median'] = np.median(col_data)
+                
+                if n > 2:
+                    feature_dict[f'{col}_skew'] = col_data.skew()
+                else:
+                    feature_dict[f'{col}_skew'] = 0
+                    
+                if n > 3:
+                    feature_dict[f'{col}_kurt'] = col_data.kurtosis()
+                else:
+                    feature_dict[f'{col}_kurt'] = 0
+                
+                feature_dict[f'{col}_q25'] = np.percentile(col_data, 25)
+                feature_dict[f'{col}_q75'] = np.percentile(col_data, 75)
+        
+        # 计算标签
+        t_price = z_raw.loc[t, 'c']
+        t_future = t + prediction_horizon_td
+        t_future_price = z_raw.loc[t_future, 'c']
+        log_return = np.log(t_future_price / t_price)
+        
+        sample = {
+            'timestamp': t,
+            't_price': t_price,
+            't_future_price': t_future_price,
+            'return_f': log_return,
+            **feature_dict
+        }
+        
+        return sample, True
+        
+    except Exception as e:
+        return None, False
+
+
 def data_prepare_coarse_grain_rolling(
         sym: str, 
         freq: str,  # 预测周期，例如 '2h' 表示预测未来2小时收益
@@ -1025,7 +1131,8 @@ def data_prepare_coarse_grain_rolling(
         timeframe: str = '',
         file_path: Optional[str] = None,
         use_parallel: bool = True,  # 是否使用并行处理
-        n_jobs: int = -1  # 并行进程数，-1表示使用所有CPU核心
+        n_jobs: int = -1,  # 并行进程数，-1表示使用所有CPU核心
+        use_fine_grain_precompute: bool = True  # 是否使用细粒度预计算优化
     ):
     """
     粗粒度特征 + 细粒度滚动的数据准备方法（滑动窗口版本）
@@ -1081,12 +1188,53 @@ def data_prepare_coarse_grain_rolling(
     z_raw = z_raw[(z_raw.index >= extended_start) & (z_raw.index <= pd.to_datetime(end_date_test))]
     print(f"读取原始数据: {len(z_raw)} 行，时间范围 {z_raw.index.min()} 至 {z_raw.index.max()}")
     
-    # ========== 第二步：生成粗粒度OHLCV桶（仅用于标签计算） ==========
-    print(f"\n生成粗粒度OHLCV桶（周期={coarse_grain_period}，用于标签计算）...")
-    coarse_bars = resample(z_raw, coarse_grain_period)
-    print(f"粗粒度桶数量: {len(coarse_bars)}")
+    # ========== 第二步：预计算粗粒度桶特征（可选优化） ==========
+    coarse_features_dict = None  # 字典：{offset: features_df}
     
-    # 注意：不再预先计算所有桶的特征，而是为每个滚动时间点动态计算滑动窗口特征
+    if use_fine_grain_precompute:
+        print(f"\n🚀 启用粗粒度预计算优化")
+        
+        # 计算需要多少组不同偏移的resample
+        coarse_period_minutes = pd.Timedelta(coarse_grain_period).total_seconds() / 60
+        rolling_step_minutes = pd.Timedelta(rolling_step).total_seconds() / 60
+        num_offsets = int(coarse_period_minutes / rolling_step_minutes)
+        
+        print(f"粗粒度周期: {coarse_grain_period} ({coarse_period_minutes}分钟)")
+        print(f"滚动步长: {rolling_step} ({rolling_step_minutes}分钟)")
+        print(f"需要预计算 {num_offsets} 组不同偏移的粗粒度桶")
+        
+        coarse_features_dict = {}
+        
+        for i in range(num_offsets):
+            offset = pd.Timedelta(minutes=i * rolling_step_minutes)
+            print(f"\n组{i}: 偏移 {offset} ...")
+            
+            # 对数据进行偏移，然后resample
+            z_raw_offset = z_raw.copy()
+            z_raw_offset.index = z_raw_offset.index - offset
+            
+            # Resample（边界会自动对齐到0:00, 2:00, 4:00...）
+            coarse_bars = resample(z_raw_offset, coarse_grain_period)
+            
+            # 恢复原始时间
+            coarse_bars.index = coarse_bars.index + offset
+            
+            print(f"  - 桶数量: {len(coarse_bars)}")
+            print(f"  - 计算BaseFeature...")
+            
+            # 计算特征
+            base_feature = originalFeature.BaseFeature(coarse_bars.copy())
+            features_df = base_feature.init_feature_df
+            
+            # 存储
+            coarse_features_dict[offset] = features_df
+            
+            print(f"  ✓ 组{i}完成: {len(features_df)} 个桶, {len(features_df.columns)} 个特征")
+        
+        print(f"\n✓ 预计算完成: {num_offsets} 组粗粒度特征")
+        print(f"优化策略: 每个时间点根据其offset选择对应组的预计算特征")
+    else:
+        print(f"\n使用原始方案（每个时间点独立计算）")
     
     # ========== 第三步：生成细粒度滚动时间网格 ==========
     print(f"\n生成细粒度滚动时间网格（步长={rolling_step}）...")
@@ -1101,23 +1249,42 @@ def data_prepare_coarse_grain_rolling(
     
     # ========== 第四步：为每个细粒度时间点提取滑动窗口特征和标签 ==========
     print(f"\n为每个时间点提取滑动窗口特征和标签...")
-    print(f"注意：采用滑动窗口方案，每个时间点都独立计算特征")
     
     coarse_period_td = pd.Timedelta(coarse_grain_period)
     prediction_horizon_td = coarse_period_td
     
+    # 选择处理函数
+    if use_fine_grain_precompute:
+        process_func = _process_timestamp_with_multi_offset_precompute
+        print(f"✨ 使用优化方案: 多组偏移预计算，完美对齐")
+    else:
+        process_func = _process_single_timestamp
+        print(f"使用原始方案: 每个时间点独立计算")
+    
     # 选择处理模式：并行或串行
     if use_parallel:
-        # ========== 并行处理模式 ==========
+        # ========== 并行处理模式（优化chunksize） ==========
         n_cores = cpu_count() if n_jobs == -1 else n_jobs
-        print(f"🚀 使用并行处理模式，进程数: {n_cores}")
         
-        # 准备参数列表
-        args_list = [
-            (t, z_raw, coarse_grain_period, feature_window_timedelta, 
-             feature_lookback_bars, prediction_horizon_td)
-            for t in fine_grain_timestamps
-        ]
+        # 动态优化 chunksize（保留这个优化）
+        optimal_chunksize = max(1, len(fine_grain_timestamps) // (n_cores * 4))
+        optimal_chunksize = min(optimal_chunksize, 100)
+        
+        print(f"🚀 使用并行处理模式，进程数: {n_cores}, 优化chunksize: {optimal_chunksize}")
+        
+        # 准备参数列表（根据是否使用优化选择不同的参数）
+        if use_fine_grain_precompute:
+            args_list = [
+                (t, z_raw, coarse_features_dict, rolling_step_minutes,
+                 feature_window_timedelta, feature_lookback_bars, prediction_horizon_td)
+                for t in fine_grain_timestamps
+            ]
+        else:
+            args_list = [
+                (t, z_raw, coarse_grain_period, feature_window_timedelta, 
+                 feature_lookback_bars, prediction_horizon_td)
+                for t in fine_grain_timestamps
+            ]
         
         # 使用进程池并行处理
         with Pool(processes=n_cores) as pool:
@@ -1126,7 +1293,8 @@ def data_prepare_coarse_grain_rolling(
             if HAS_TQDM:
                 # 使用tqdm进度条（更友好）
                 iterator = tqdm(
-                    pool.imap_unordered(_process_single_timestamp, args_list, chunksize=10),
+                    pool.imap_unordered(process_func, args_list, 
+                                      chunksize=optimal_chunksize),
                     total=len(fine_grain_timestamps),
                     desc="并行处理",
                     unit="样本"
@@ -1135,7 +1303,9 @@ def data_prepare_coarse_grain_rolling(
                     results.append(result)
             else:
                 # 降级为简单的百分比显示
-                for idx, result in enumerate(pool.imap_unordered(_process_single_timestamp, args_list, chunksize=10)):
+                for idx, result in enumerate(pool.imap_unordered(
+                    process_func, args_list, 
+                    chunksize=optimal_chunksize)):
                     results.append(result)
                     if idx % 100 == 0:
                         print(f"  处理进度: {idx}/{len(fine_grain_timestamps)} ({100*idx/len(fine_grain_timestamps):.1f}%)")
@@ -1148,7 +1318,7 @@ def data_prepare_coarse_grain_rolling(
         print(f"\n✓ 并行处理完成: 有效 {valid_count} 个，跳过 {skipped_count} 个")
     
     else:
-        # ========== 串行处理模式（原始方式，用于调试）==========
+        # ========== 串行处理模式（用于调试）==========
         print(f"使用串行处理模式（单线程）")
         
         samples = []
@@ -1163,10 +1333,15 @@ def data_prepare_coarse_grain_rolling(
             if not HAS_TQDM and idx % 50 == 0:
                 print(f"  处理进度: {idx}/{len(fine_grain_timestamps)} ({100*idx/len(fine_grain_timestamps):.1f}%)")
             
-            # 调用同样的处理函数
-            args = (t, z_raw, coarse_grain_period, feature_window_timedelta, 
-                   feature_lookback_bars, prediction_horizon_td)
-            sample, success = _process_single_timestamp(args)
+            # 根据是否使用优化选择不同的参数
+            if use_fine_grain_precompute:
+                args = (t, z_raw, coarse_features_dict, rolling_step_minutes,
+                       feature_window_timedelta, feature_lookback_bars, prediction_horizon_td)
+            else:
+                args = (t, z_raw, coarse_grain_period, feature_window_timedelta, 
+                       feature_lookback_bars, prediction_horizon_td)
+            
+            sample, success = process_func(args)
             
             if success:
                 samples.append(sample)
