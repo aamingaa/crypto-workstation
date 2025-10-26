@@ -517,7 +517,7 @@ def resample(z: pd.DataFrame, freq: str) -> pd.DataFrame:
     if freq == '15m':
         return z
     
-    if freq != '1min' or freq != '1m':
+    if freq not in ('1min', '1m'):
         z.index = pd.to_datetime(z.index)
         # 注意closed和label参数
         z = z.resample(freq, closed='left', label='left').agg({'o': 'first',
@@ -1028,8 +1028,9 @@ def _process_timestamp_with_multi_offset_precompute(args):
     
     try:
         # 计算当前时间点的分钟偏移（相对于整点）
-        minute_offset = t.minute % int(rolling_step_minutes)
-        offset = pd.Timedelta(minutes=minute_offset)
+        step = int(rolling_step_minutes)
+        offset_minutes = (t.minute // step) * step  # 0, 15, 30, 45...
+        offset = pd.Timedelta(minutes=offset_minutes)
         
         # 选择对应的预计算特征组
         # if offset not in coarse_features_dict:
@@ -1122,7 +1123,7 @@ def data_prepare_coarse_grain_rolling(
         end_date_test: str,
         coarse_grain_period: str = '2h',  # 粗粒度特征桶周期
         feature_lookback_bars: int = 8,    # 特征回溯桶数（8个2h = 16小时）
-        rolling_step: str = '10min',       # 滚动步长
+        rolling_step: str = '15min',       # 滚动步长
         y_train_ret_period: int = 8,       # 预测周期（以coarse_grain为单位，1表示1个2h）
         rolling_w: int = 2000,
         output_format: str = 'ndarry',
@@ -1132,7 +1133,8 @@ def data_prepare_coarse_grain_rolling(
         file_path: Optional[str] = None,
         use_parallel: bool = True,  # 是否使用并行处理
         n_jobs: int = -1,  # 并行进程数，-1表示使用所有CPU核心
-        use_fine_grain_precompute: bool = True  # 是否使用细粒度预计算优化
+        use_fine_grain_precompute: bool = True,  # 是否使用细粒度预计算优化
+        include_categories: List[str] = None
     ):
     """
     粗粒度特征 + 细粒度滚动的数据准备方法（滑动窗口版本）
@@ -1150,7 +1152,7 @@ def data_prepare_coarse_grain_rolling(
     - coarse_grain_period: 粗粒度特征桶周期，如 '2h', '1h', '30min'
     - feature_lookback_bars: 特征回溯的粗粒度桶数量（如8表示8个2h桶）
     - rolling_step: 滚动步长，如 '15min', '10min', '5min'
-    - y_train_ret_period: 预测周期数（以coarse_grain_period为单位）
+    - y_train_ret_period: 预测周期数（以rolling_step为单位）
     
     示例场景（滑动窗口）：
     - coarse_grain_period='2h', feature_lookback_bars=8, rolling_step='15min'
@@ -1172,7 +1174,7 @@ def data_prepare_coarse_grain_rolling(
     print(f"粗粒度周期: {coarse_grain_period}")
     print(f"特征窗口: {feature_lookback_bars} × {coarse_grain_period} = {feature_lookback_bars * pd.Timedelta(coarse_grain_period).total_seconds() / 3600:.1f}小时")
     print(f"滚动步长: {rolling_step}")
-    print(f"预测周期: {y_train_ret_period} × {coarse_grain_period}")
+    print(f"预测周期: {y_train_ret_period} × {rolling_step} = {y_train_ret_period * pd.Timedelta(rolling_step).total_seconds() / 3600:.1f}小时")
     print(f"注意：每个时间点都会独立计算其滑动窗口特征，避免重复使用相同的粗粒度桶")
     print(f"{'='*60}\n")
     
@@ -1219,11 +1221,19 @@ def data_prepare_coarse_grain_rolling(
             # 恢复原始时间
             coarse_bars.index = coarse_bars.index + offset
             
+            # 🔧 修复：过滤掉超出原始数据范围的桶
+            original_start = z_raw.index.min()
+            original_end = z_raw.index.max()
+            coarse_bars = coarse_bars[
+                (coarse_bars.index >= original_start) & 
+                (coarse_bars.index <= original_end)
+            ]
+
             print(f"  - 桶数量: {len(coarse_bars)}")
             print(f"  - 计算BaseFeature...")
             
             # 计算特征
-            base_feature = originalFeature.BaseFeature(coarse_bars.copy())
+            base_feature = originalFeature.BaseFeature(coarse_bars.copy(), include_categories = include_categories)
             features_df = base_feature.init_feature_df
             
             # 存储
@@ -1250,8 +1260,8 @@ def data_prepare_coarse_grain_rolling(
     # ========== 第四步：为每个细粒度时间点提取滑动窗口特征和标签 ==========
     print(f"\n为每个时间点提取滑动窗口特征和标签...")
     
-    coarse_period_td = pd.Timedelta(coarse_grain_period)
-    prediction_horizon_td = coarse_period_td
+    # coarse_period_td = pd.Timedelta(coarse_grain_period)
+    prediction_horizon_td = pd.Timedelta(rolling_step) * y_train_ret_period
     
     # 选择处理函数
     if use_fine_grain_precompute:

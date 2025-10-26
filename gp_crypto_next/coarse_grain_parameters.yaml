@@ -4,9 +4,9 @@ freq: 15m    # 指定数据频率（用于读取原始数据）
 sym: ETHUSDT    # 指定gplearn做训练的品种数据
 y_train_ret_period: 1    # 预测未来1个粗粒度周期的收益（1×2h=2小时）
 start_date_train: '2025-01-01'
-end_date_train: '2025-02-01'
-start_date_test: '2025-02-01'
-end_date_test: '2025-03-01'
+end_date_train: '2025-03-01'
+start_date_test: '2025-03-01'
+end_date_test: '2025-04-01'
 timeframe: '15m'
 # data_dir: '/Volumes/Ext-Disk/data/futures/um/monthly/klines/ETHUSDT/15m'
 data_dir: '/Users/aming/data/ETHUSDT/15m'
@@ -23,11 +23,12 @@ coarse_grain_period: '1h'
 feature_lookback_bars: 8
 
 # 滚动步长（15分钟）
-rolling_step: '15min'
+rolling_step: '1h'
 
 # ===== 或者直接指定数据文件路径 =====
 # file_path: '/path/to/your/data.feather'
 
+include_categories: ['momentum']
 execution_mode: 'once'   # 'once' or 'loop'
 
 gp_settings:

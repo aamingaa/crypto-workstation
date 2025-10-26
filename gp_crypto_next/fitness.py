@@ -46,6 +46,7 @@ def calculate_annual_bars(freq: str) -> int:
 rolling_w = 2000
 # freq = '30min'
 freq = '1h'
+# freq = '15min'
 x_clip = 20
 y_clip = 0.2
 fee = 0.0001  # 手续费：万5

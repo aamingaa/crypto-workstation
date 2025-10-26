@@ -161,7 +161,8 @@ class GPAnalyzer:
                     data_dir=self.data_dir, 
                     read_frequency=self.read_frequency, 
                     timeframe=self.timeframe,
-                    file_path=self.file_path)
+                    file_path=self.file_path,
+                    include_categories = getattr(self, 'include_categories', None))
             elif str(self.data_source).lower() == 'thick_rolling':
                 self.X_all, self.X_train, self.y_train, self.ret_train, self.X_test, self.y_test, self.ret_test, self.feature_names,self.open_train,self.open_test,self.close_train,self.close_test, self.z_index ,self.ohlc= dataload.data_thick_rolling_prepare(
                     self.sym, self.freq, self.start_date_train, self.end_date_train,

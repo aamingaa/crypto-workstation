@@ -365,7 +365,7 @@ df_list = []
 date_list = _generate_date_range(start_date, end_date)
 raw_data = []
 for date in date_list:
-    file_path = f'/Volumes/Ext-Disk/data/futures/um/monthly/klines/DOGEUSDT/1h/2025/DOGEUSDT-1h-{date}.zip'
+    file_path = f'/Volumes/Ext-Disk/data/futures/um/monthly/klines/ETHUSDT/1h/2025/ETHUSDT-1h-{date}.zip'
     df = pd.read_csv(file_path)
     # df['date'] = date
     df_list.append(df)
