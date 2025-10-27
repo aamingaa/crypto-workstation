@@ -285,7 +285,8 @@ class GPAnalyzer:
         self.best_programs_df['feature_lookback_bars'] = self.feature_lookback_bars
         self.best_programs_df['rolling_step'] = self.rolling_step
         self.best_programs_df['y_train_ret_period'] = self.y_train_ret_period
-        self.best_programs_df['include_categories'] = self.include_categories
+        # 将列表转换为字符串，避免长度不匹配错误
+        self.best_programs_df['include_categories'] = str(self.include_categories) if self.include_categories else None
         self.best_programs_df['start_date_train'] = self.start_date_train
         self.best_programs_df['end_date_train'] = self.end_date_train
         self.best_programs_df['start_date_test'] = self.start_date_test
