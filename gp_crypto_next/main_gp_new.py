@@ -85,6 +85,10 @@ class GPAnalyzer:
         self.freq = self.config.get('freq', '')
         self.y_train_ret_period = self.config.get('y_train_ret_period', 1)
         self.sym = self.config.get('sym', '')
+        self.coarse_grain_period = self.config.get('coarse_grain_period', '2h')
+        self.feature_lookback_bars = self.config.get('feature_lookback_bars', 8)
+        self.rolling_step = self.config.get('rolling_step', '15min')
+        self.include_categories = self.config.get('include_categories', None)
         self.start_date_train = self.config.get('start_date_train', '')
         self.end_date_train = self.config.get('end_date_train', '')
         self.start_date_test = self.config.get('start_date_test', '')
@@ -277,7 +281,11 @@ class GPAnalyzer:
 
         self.best_programs_df['sym'] = self.sym
         self.best_programs_df['freq'] = self.freq
+        self.best_programs_df['coarse_grain_period'] = self.coarse_grain_period
+        self.best_programs_df['feature_lookback_bars'] = self.feature_lookback_bars
+        self.best_programs_df['rolling_step'] = self.rolling_step
         self.best_programs_df['y_train_ret_period'] = self.y_train_ret_period
+        self.best_programs_df['include_categories'] = self.include_categories
         self.best_programs_df['start_date_train'] = self.start_date_train
         self.best_programs_df['end_date_train'] = self.end_date_train
         self.best_programs_df['start_date_test'] = self.start_date_test
