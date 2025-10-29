@@ -441,6 +441,25 @@ def _calculate_sharpe_ratio(y, y_pred, w, periods_per_year =times_per_year ):
     
     return sharp_ratio
 
+def _calculate_average_sharpe_ratio(y, y_pred, w, periods_per_year = times_per_year, n_chunk = 5):
+    # 确保x和y长度相同
+    y_pred = np.nan_to_num(y_pred).flatten()
+    y = np.nan_to_num(y).flatten()
+    w = np.nan_to_num(w).flatten()
+    assert len(y) == len(y_pred), "x and y must have the same length"
+
+    x_segments = np.array_split(y_pred, n_chunk)
+    y_segments = np.array_split(y, n_chunk)
+    w_segments = np.array_split(w, n_chunk)
+
+    sharpes = [
+        _calculate_sharpe_ratio(y_seg, x_seg, w_seg, periods_per_year)
+        for x_seg, y_seg, w_seg in zip(x_segments, y_segments, w_segments)
+    ]
+
+    vals = np.array(sharpes, dtype=float)
+    vals[~np.isfinite(vals)] = np.nan
+    return float(np.nanmean(vals))
 
 
 
@@ -457,6 +476,35 @@ def _calculate_rolling_sharp(y, y_pred,w,t=rolling_w, period_per_year=times_per_
     return np.nan_to_num(sharpe_ratio)
 
 
+
+def _calculate_rolling_ic(y, y_pred, w, t=rolling_w, method='pearson'):
+    """计算滚动窗口下的IC（相关系数）序列。
+
+    method: 'pearson' 或 'spearman'
+    返回与输入同长度的Series（数值型数组）。
+    """
+    y_pred = np.nan_to_num(y_pred).flatten()
+    y = np.nan_to_num(y).flatten()
+
+    s_pred = pd.Series(y_pred)
+    s_true = pd.Series(y)
+
+    if method == 'spearman':
+        rolling_ic = s_pred.rolling(window=t).corr(s_true, method='spearman')
+    else:
+        rolling_ic = s_pred.rolling(window=t).corr(s_true, method='pearson')
+
+    return np.nan_to_num(rolling_ic)
+
+
+def _calculate_rolling_rank_sic(y, y_pred, w, t=rolling_w):
+    """计算滚动窗口下的Rank IC（即滚动Spearman相关）序列。"""
+    return _calculate_rolling_ic(y, y_pred, w, t=t, method='spearman')
+
+
+def _calculate_rolling_rank_pic(y, y_pred, w, t=rolling_w):
+    """计算滚动窗口下的Rank IC（即滚动Spearman相关）序列。"""
+    return _calculate_rolling_ic(y, y_pred, w, t=t, method='pearson')
 
 
 
@@ -566,54 +614,65 @@ calmar = _Fitness(function=_calculate_calmar_ratio,
                             greater_is_better=True)
 sharp = _Fitness(function=_calculate_sharpe_ratio,
                             greater_is_better=True)
+avg_sharpe_ratio = _Fitness(function=_calculate_average_sharpe_ratio,
+                            greater_is_better=True)
 rolling_sharp = _Fitness(function=_calculate_rolling_sharp,
                             greater_is_better=True)
 sharpe_fixed_threshold = _Fitness(function=_sharpe_fixed_threshold,
                             greater_is_better=True)
 sharpe_std_threshold = _Fitness(function=_sharpe_std_threshold,
                             greater_is_better=True)
+rolling_rank_sic = _Fitness(function=_calculate_rolling_rank_sic,
+                            greater_is_better=True)
+rolling_rank_pic = _Fitness(function=_calculate_rolling_rank_pic,
+                            greater_is_better=True)
 
 
 
 # #全集
-# _fitness_map =     {'pearson': weighted_pearson,
-#                     'spearman': weighted_spearman,
-#                     'mae': mean_absolute_error,
-#                     'mse': mean_square_error,
-#                     'rmse': root_mean_square_error,
-#                     'logloss': log_loss,
-#                     'avg_pic':avg_pic,
-#                     'avg_sic':avg_sic,
-#                     'max_ic':max_ic,
-#                     'max_ic_train':max_ic_train,
-#                     'given_ic_test':given_ic_test,
-#                     'pnl':pnl,
-#                     'rts':rts,
-#                     'max_dd':max_dd,
-#                     'avg_mdd':avg_mdd,
-#                     'calmar':calmar,
-#                     'sharp':sharp,
-#                     'rolling_sharp':rolling_sharp,
-#                     'sharpe_fixed_threshold':sharpe_fixed_threshold,
-#                     'sharpe_std_threshold':sharpe_std_threshold
-#                     }
-
-#实际调用
-_fitness_map =     {'avg_pic':avg_pic,
+_fitness_map =     {'pearson': weighted_pearson,
+                    'spearman': weighted_spearman,
+                    'mae': mean_absolute_error,
+                    'mse': mean_square_error,
+                    'rmse': root_mean_square_error,
+                    'logloss': log_loss,
+                    'avg_pic':avg_pic,
                     'avg_sic':avg_sic,
-                    'calmar':calmar,
-                    'sharp':sharp,
-                    'sharpe_fixed_threshold':sharpe_fixed_threshold,
-                    'sharpe_std_threshold':sharpe_std_threshold,
-                    'max_dd':max_dd,
-                    'avg_mdd':avg_mdd,
                     'max_ic':max_ic,
                     'max_ic_train':max_ic_train,
-                    'given_ic_test':given_ic_test
+                    'given_ic_test':given_ic_test,
+                    'pnl':pnl,
+                    'rts':rts,
+                    'max_dd':max_dd,
+                    'avg_mdd':avg_mdd,
+                    'calmar':calmar,
+                    'sharp':sharp,
+                    'avg_sharpe_ratio':avg_sharpe_ratio,
+                    'rolling_sharp':rolling_sharp,
+                    'rolling_rank_pic':rolling_rank_pic,
+                    'rolling_rank_sic':rolling_rank_sic,
+                    'sharpe_fixed_threshold':sharpe_fixed_threshold,
+                    'sharpe_std_threshold':sharpe_std_threshold
                     }
+
+#实际调用
+# _fitness_map =     {'avg_pic':avg_pic,
+#                     'avg_sic':avg_sic,
+#                     'calmar':calmar,
+#                     'sharp':sharp,
+#                     'sharpe_fixed_threshold':sharpe_fixed_threshold,
+#                     'sharpe_std_threshold':sharpe_std_threshold,
+#                     'max_dd':max_dd,
+#                     'avg_mdd':avg_mdd,
+#                     'max_ic':max_ic,
+#                     'max_ic_train':max_ic_train,
+#                     'given_ic_test':given_ic_test
+#                     }
 
 # 只在启用地option3时调用，因为fitness会输出字典或者序列
 _backtest_map = {'pnl':pnl,
                  'rts':rts,
-                 'rolling_sharp':rolling_sharp
+                 'rolling_sharp':rolling_sharp,
+                 'rolling_rank_pic':rolling_rank_pic,
+                 'rolling_rank_sic':rolling_rank_sic
                 }
