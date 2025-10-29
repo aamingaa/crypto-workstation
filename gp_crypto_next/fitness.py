@@ -441,21 +441,24 @@ def _calculate_sharpe_ratio(y, y_pred, w, periods_per_year =times_per_year ):
     
     return sharp_ratio
 
-def _calculate_average_sharpe_ratio(y, y_pred, w, periods_per_year = times_per_year, n_chunk = 5):
+def _calculate_average_sharpe_ratio(y, y_pred, w, periods_per_year = times_per_year, n_chunk = 10):
     # 确保x和y长度相同
     y_pred = np.nan_to_num(y_pred).flatten()
     y = np.nan_to_num(y).flatten()
     w = np.nan_to_num(w).flatten()
     assert len(y) == len(y_pred), "x and y must have the same length"
 
+    total_length = len(y)
     x_segments = np.array_split(y_pred, n_chunk)
     y_segments = np.array_split(y, n_chunk)
     w_segments = np.array_split(w, n_chunk)
 
-    sharpes = [
-        _calculate_sharpe_ratio(y_seg, x_seg, w_seg, periods_per_year)
-        for x_seg, y_seg, w_seg in zip(x_segments, y_segments, w_segments)
-    ]
+    sharpes = []
+    for x_seg, y_seg, w_seg in zip(x_segments, y_segments, w_segments):
+        # 按分段长度等比例缩放年化系数
+        segment_periods_per_year = periods_per_year * len(y_seg) / total_length
+        sharpe = _calculate_sharpe_ratio(y_seg, x_seg, w_seg, segment_periods_per_year)
+        sharpes.append(sharpe)
 
     vals = np.array(sharpes, dtype=float)
     vals[~np.isfinite(vals)] = np.nan
