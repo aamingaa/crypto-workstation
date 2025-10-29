@@ -247,14 +247,33 @@ class GPAnalyzer:
                 self.ret_train_normalized = self.ret_train.copy()
                 self.y_test_normalized = self.y_test.copy()
                 self.ret_test_normalized = self.ret_test.copy()
+                self.X_train_full = self.X_train.copy()
+                self.X_test_full = self.X_test.copy()
             
             # 还原训练集和测试集的数据
             print(f"使用 inverse_norm 将标准化的 label 还原为原始尺度 (window={self.rolling_window})")
-            self.y_train = inverse_norm(self.y_train_normalized, self.y_p_train_origin, window=self.rolling_window)
-            self.ret_train = inverse_norm(self.ret_train_normalized, self.y_p_train_origin, window=self.rolling_window)
-            self.y_test = inverse_norm(self.y_test_normalized, self.y_p_test_origin, window=self.rolling_window)
-            self.ret_test = inverse_norm(self.ret_test_normalized, self.y_p_test_origin, window=self.rolling_window)
-            print(f"inverse_norm 完成: y_train 均值={np.mean(self.y_train):.6f}, 标准差={np.std(self.y_train):.6f}")
+            y_train_restored = inverse_norm(self.y_train_normalized, self.y_p_train_origin, window=self.rolling_window)
+            ret_train_restored = inverse_norm(self.ret_train_normalized, self.y_p_train_origin, window=self.rolling_window)
+            y_test_restored = inverse_norm(self.y_test_normalized, self.y_p_test_origin, window=self.rolling_window)
+            ret_test_restored = inverse_norm(self.ret_test_normalized, self.y_p_test_origin, window=self.rolling_window)
+            
+            # 截取掉前 window+1 个无效样本（inverse_norm 用原始数据填充的部分）
+            skip_samples = self.rolling_window + 1
+            print(f"⚠️  截取前 {skip_samples} 个样本（这些样本的 inverse_norm 不准确）")
+            print(f"   训练集: {len(self.X_train)} -> {len(self.X_train) - skip_samples} 样本")
+            
+            # 更新训练集
+            self.X_train = self.X_train_full[skip_samples:]
+            self.y_train = y_train_restored[skip_samples:]
+            self.ret_train = ret_train_restored[skip_samples:]
+            
+            # 测试集也做同样处理
+            self.X_test = self.X_test_full[skip_samples:]
+            self.y_test = y_test_restored[skip_samples:]
+            self.ret_test = ret_test_restored[skip_samples:]
+            
+            print(f"   测试集: {len(self.X_test_full)} -> {len(self.X_test)} 样本")
+            print(f"✓ inverse_norm 完成: y_train 均值={np.mean(self.y_train):.6f}, 标准差={np.std(self.y_train):.6f}")
         else:
             print(f"⚠️  当前 data_source ({self.data_source}) 不提供原始数据，跳过 inverse_norm")
         
