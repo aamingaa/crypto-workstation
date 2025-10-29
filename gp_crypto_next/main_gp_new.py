@@ -32,8 +32,11 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 pd.set_option('display.max_columns', 100)
 pd.set_option('display.max_rows', 100)
 
-norm_y_list = ['avg_pic','avg_sic','max_ic','max_ic_train','given_ic_test']
-raw_y_list = ['calmar','sharp','sharpe_fixed_threshold','sharpe_std_threshold','max_dd','avg_mdd']
+# norm_y_list = ['avg_pic','avg_sic','max_ic','max_ic_train','given_ic_test']
+# raw_y_list = ['calmar','sharp','sharpe_fixed_threshold','sharpe_std_threshold','max_dd','avg_mdd']
+
+norm_y_list = ['avg_pic','avg_sic','max_ic','max_ic_train','given_ic_test', 'rolling_rank_pic', 'rolling_rank_sic']
+raw_y_list = ['calmar','sharp','sharpe_fixed_threshold','sharpe_std_threshold','max_dd','avg_mdd', 'rolling_sharp', 'avg_sharpe_ratio']
 
 def calculate_annual_bars(freq: str) -> int:
     # 创建一个 pandas 定时器（timestamp），并获取 freq 参数所表示的时间间隔

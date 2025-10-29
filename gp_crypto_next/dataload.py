@@ -1389,9 +1389,12 @@ def data_prepare_coarse_grain_rolling(
         factor_value = factor_value.replace([np.inf, -np.inf, np.nan], 0.0)
         return np.nan_to_num(factor_value).flatten()
     
-    df_samples['ret_rolling_zscore'] = norm(df_samples['return_p'].values, window = 200, clip = 6)
+    # 使用与 rolling_w 一致的 window，确保后续 inverse_norm 能正确匹配
+    norm_window = rolling_w  # 使用配置的 rolling_w
+    df_samples['ret_rolling_zscore'] = norm(df_samples['return_p'].values, window=norm_window, clip=6)
     df_samples['return_f'] = df_samples['ret_rolling_zscore']
-
+    
+    print(f"✓ 使用 norm(window={norm_window}) 进行标准化")
     # df_samples['ret_rolling_zscore'] = norm(df_samples['return_f'].values, window = 200, clip = 6)
     # df_samples['ret_rolling_zscore'] = norm_ret(df_samples['return_f'].values)
     

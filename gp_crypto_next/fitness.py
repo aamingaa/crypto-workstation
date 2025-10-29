@@ -633,44 +633,48 @@ rolling_rank_pic = _Fitness(function=_calculate_rolling_rank_pic,
 
 
 # #全集
-_fitness_map =     {'pearson': weighted_pearson,
-                    'spearman': weighted_spearman,
-                    'mae': mean_absolute_error,
-                    'mse': mean_square_error,
-                    'rmse': root_mean_square_error,
-                    'logloss': log_loss,
-                    'avg_pic':avg_pic,
+# _fitness_map =     {'pearson': weighted_pearson,
+#                     'spearman': weighted_spearman,
+#                     'mae': mean_absolute_error,
+#                     'mse': mean_square_error,
+#                     'rmse': root_mean_square_error,
+#                     'logloss': log_loss,
+#                     'avg_pic':avg_pic,
+#                     'avg_sic':avg_sic,
+#                     'max_ic':max_ic,
+#                     'max_ic_train':max_ic_train,
+#                     'given_ic_test':given_ic_test,
+#                     'pnl':pnl,
+#                     'rts':rts,
+#                     'max_dd':max_dd,
+#                     'avg_mdd':avg_mdd,
+#                     'calmar':calmar,
+#                     'sharp':sharp,
+#                     'avg_sharpe_ratio':avg_sharpe_ratio,
+#                     'rolling_sharp':rolling_sharp,
+#                     'rolling_rank_pic':rolling_rank_pic,
+#                     'rolling_rank_sic':rolling_rank_sic,
+#                     'sharpe_fixed_threshold':sharpe_fixed_threshold,
+#                     'sharpe_std_threshold':sharpe_std_threshold
+#                     }
+
+#实际调用
+_fitness_map =     {'avg_pic':avg_pic,
                     'avg_sic':avg_sic,
+                    'calmar':calmar,
+                    'sharp':sharp,
+                    'sharpe_fixed_threshold':sharpe_fixed_threshold,
+                    'sharpe_std_threshold':sharpe_std_threshold,
+                    'max_dd':max_dd,
+                    'avg_mdd':avg_mdd,
                     'max_ic':max_ic,
                     'max_ic_train':max_ic_train,
                     'given_ic_test':given_ic_test,
-                    'pnl':pnl,
-                    'rts':rts,
-                    'max_dd':max_dd,
-                    'avg_mdd':avg_mdd,
-                    'calmar':calmar,
-                    'sharp':sharp,
                     'avg_sharpe_ratio':avg_sharpe_ratio,
                     'rolling_sharp':rolling_sharp,
                     'rolling_rank_pic':rolling_rank_pic,
                     'rolling_rank_sic':rolling_rank_sic,
-                    'sharpe_fixed_threshold':sharpe_fixed_threshold,
-                    'sharpe_std_threshold':sharpe_std_threshold
                     }
-
-#实际调用
-# _fitness_map =     {'avg_pic':avg_pic,
-#                     'avg_sic':avg_sic,
-#                     'calmar':calmar,
-#                     'sharp':sharp,
-#                     'sharpe_fixed_threshold':sharpe_fixed_threshold,
-#                     'sharpe_std_threshold':sharpe_std_threshold,
-#                     'max_dd':max_dd,
-#                     'avg_mdd':avg_mdd,
-#                     'max_ic':max_ic,
-#                     'max_ic_train':max_ic_train,
-#                     'given_ic_test':given_ic_test
-#                     }
 
 # 只在启用地option3时调用，因为fitness会输出字典或者序列
 _backtest_map = {'pnl':pnl,
