@@ -24,6 +24,8 @@ from scipy.stats import tukeylambda, mstats
 from sklearn.preprocessing import RobustScaler
 import zipfile
 from io import BytesIO
+from NormDataCheck import norm, inverse_norm
+
 
 # 微结构（bar级）稳健代理函数
 # from utils.microstructure_features import (
@@ -1098,13 +1100,20 @@ def _process_timestamp_with_multi_offset_precompute(args):
         t_price = z_raw.loc[t, 'c']
         t_future = t + prediction_horizon_td
         t_future_price = z_raw.loc[t_future, 'c']
-        log_return = np.log(t_future_price / t_price)
         
+        # norm_return = norm(t_future_price / t_price, window = 200, clip = 6)
+        # log_return = np.log(t_future_price / t_price)
+
+        # return_f = t_future_price / t_price
+        return_p = t_future_price / t_price
+
+
         sample = {
             'timestamp': t,
             't_price': t_price,
             't_future_price': t_future_price,
-            'return_f': log_return,
+            'return_p' : return_p,
+            # 'return_f': return_f,
             **feature_dict
         }
         
@@ -1274,8 +1283,9 @@ def data_prepare_coarse_grain_rolling(
     # 选择处理模式：并行或串行
     if use_parallel:
         # ========== 并行处理模式（优化chunksize） ==========
-        n_cores = cpu_count() if n_jobs == -1 else n_jobs
-        
+        # n_cores = cpu_count() if n_jobs == -1 else n_jobs
+        n_cores = 1
+
         # 动态优化 chunksize（保留这个优化）
         optimal_chunksize = max(1, len(fine_grain_timestamps) // (n_cores * 4))
         optimal_chunksize = min(optimal_chunksize, 100)
@@ -1379,7 +1389,11 @@ def data_prepare_coarse_grain_rolling(
         factor_value = factor_value.replace([np.inf, -np.inf, np.nan], 0.0)
         return np.nan_to_num(factor_value).flatten()
     
-    df_samples['ret_rolling_zscore'] = norm_ret(df_samples['return_f'].values)
+    df_samples['ret_rolling_zscore'] = norm(df_samples['return_p'].values, window = 200, clip = 6)
+    df_samples['return_f'] = df_samples['ret_rolling_zscore']
+
+    # df_samples['ret_rolling_zscore'] = norm(df_samples['return_f'].values, window = 200, clip = 6)
+    # df_samples['ret_rolling_zscore'] = norm_ret(df_samples['return_f'].values)
     
     print(f"\n标签统计:")
     print(f"return_f - 偏度: {df_samples['return_f'].skew():.4f}, 峰度: {df_samples['return_f'].kurtosis():.4f}")
@@ -1402,6 +1416,10 @@ def data_prepare_coarse_grain_rolling(
     y_test = df_samples.loc[test_mask, 'ret_rolling_zscore'].fillna(0).values
     ret_train = df_samples.loc[train_mask, 'return_f'].fillna(0).values
     ret_test = df_samples.loc[test_mask, 'return_f'].fillna(0).values
+
+    y_p_train_origin = df_samples.loc[train_mask, 'return_p'].fillna(0).values
+    y_p_test_origin = df_samples.loc[test_mask, 'return_p'].fillna(0).values
+
     
     # 价格数据（用于回测）
     open_train = df_samples.loc[train_mask, 't_price']
@@ -1438,7 +1456,7 @@ def data_prepare_coarse_grain_rolling(
     # 返回接口与 data_prepare 保持一致
     return (X_all, X_train, y_train, ret_train, X_test, y_test, ret_test,
             feature_names, open_train, open_test, close_train, close_test,
-            df_samples.index, ohlc_aligned)
+            df_samples.index, ohlc_aligned, y_p_train_origin, y_p_test_origin)
 
 
 def data_prepare_micro(sym: str, freq: str,

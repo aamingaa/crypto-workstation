@@ -26,6 +26,7 @@ from scipy.stats import zscore, kurtosis, skew, yeojohnson, boxcox
 from scipy.stats import tukeylambda, mstats
 from expressionProgram import FeatureEvaluator
 from concurrent.futures import ProcessPoolExecutor
+from NormDataCheck import norm, inverse_norm
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 pd.set_option('display.max_columns', 100)
@@ -153,7 +154,7 @@ class GPAnalyzer:
                     feature_keywords=getattr(self, 'feature_keywords', None))
             elif str(self.data_source).lower() == 'coarse_grain':
                 # 新增：粗粒度特征 + 细粒度滚动版数据准备
-                self.X_all, self.X_train, self.y_train, self.ret_train, self.X_test, self.y_test, self.ret_test, self.feature_names,self.open_train,self.open_test,self.close_train,self.close_test, self.z_index ,self.ohlc= dataload.data_prepare_coarse_grain_rolling(
+                self.X_all, self.X_train, self.y_train, self.ret_train, self.X_test, self.y_test, self.ret_test, self.feature_names,self.open_train,self.open_test,self.close_train,self.close_test, self.z_index ,self.ohlc, self.y_p_train_origin, self.y_p_test_origin= dataload.data_prepare_coarse_grain_rolling(
                     self.sym, self.freq, self.start_date_train, self.end_date_train,
                     self.start_date_test, self.end_date_test, 
                     coarse_grain_period=getattr(self, 'coarse_grain_period', '2h'),
@@ -236,10 +237,33 @@ class GPAnalyzer:
         """
         fct_generate的一部分
         执行遗传编程过程。
+        如果有原始数据(y_p_train_origin)，使用 inverse_norm 将标准化的 label 还原为原始尺度后再训练。
         """
-        if self.metric in norm_y_list :
+        # 检查是否有原始数据可用（仅 coarse_grain 数据源提供）
+        if hasattr(self, 'y_p_train_origin') and hasattr(self, 'y_p_test_origin'):
+            # 保存原始的标准化数据（可能后续需要）
+            if not hasattr(self, 'y_train_normalized'):
+                self.y_train_normalized = self.y_train.copy()
+                self.ret_train_normalized = self.ret_train.copy()
+                self.y_test_normalized = self.y_test.copy()
+                self.ret_test_normalized = self.ret_test.copy()
+            
+            # 还原训练集和测试集的数据
+            print(f"使用 inverse_norm 将标准化的 label 还原为原始尺度 (window={self.rolling_window})")
+            self.y_train = inverse_norm(self.y_train_normalized, self.y_p_train_origin, window=self.rolling_window)
+            self.ret_train = inverse_norm(self.ret_train_normalized, self.y_p_train_origin, window=self.rolling_window)
+            self.y_test = inverse_norm(self.y_test_normalized, self.y_p_test_origin, window=self.rolling_window)
+            self.ret_test = inverse_norm(self.ret_test_normalized, self.y_p_test_origin, window=self.rolling_window)
+            print(f"inverse_norm 完成: y_train 均值={np.mean(self.y_train):.6f}, 标准差={np.std(self.y_train):.6f}")
+        else:
+            print(f"⚠️  当前 data_source ({self.data_source}) 不提供原始数据，跳过 inverse_norm")
+        
+        # 根据 metric 类型选择使用哪个 label 进行训练
+        if self.metric in norm_y_list:
+            # IC 类指标使用 y_train
             self.est_gp = self.gp(self.X_train, self.y_train, feature_names=self.feature_names, random_state=random_state)
         else:
+            # Sharpe 类指标使用 ret_train
             self.est_gp = self.gp(self.X_train, self.ret_train, feature_names=self.feature_names, random_state=random_state)
            
         
