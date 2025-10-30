@@ -246,12 +246,17 @@ class GPAnalyzer:
         if hasattr(self, 'y_p_train_origin') and hasattr(self, 'y_p_test_origin'):
             # 保存原始的标准化数据（可能后续需要）
             if not hasattr(self, 'y_train_normalized'):
+                # 保存原始长度，用于后续的数据切分
+                self.train_len_full = len(self.y_train)
+                self.test_len_full = len(self.y_test)
+                
                 self.y_train_normalized = self.y_train.copy()
                 self.ret_train_normalized = self.ret_train.copy()
                 self.y_test_normalized = self.y_test.copy()
                 self.ret_test_normalized = self.ret_test.copy()
                 self.X_train_full = self.X_train.copy()
                 self.X_test_full = self.X_test.copy()
+                self.X_all_full = self.X_all.copy()  # ← 重要：也要保存 X_all！
             
             # 还原训练集和测试集的数据
             print(f"使用 inverse_norm 将标准化的 label 还原为原始尺度 (window={self.rolling_window})")
@@ -260,23 +265,40 @@ class GPAnalyzer:
             y_test_restored = inverse_norm(self.y_test_normalized, self.y_p_test_origin, window=self.rolling_window)
             ret_test_restored = inverse_norm(self.ret_test_normalized, self.y_p_test_origin, window=self.rolling_window)
             
-            # 截取掉前 window+1 个无效样本（inverse_norm 用原始数据填充的部分）
+            # 截取掉前 window+1 个无效样本（inverse_norm 返回的前面是 0）
             skip_samples = self.rolling_window + 1
-            print(f"⚠️  截取前 {skip_samples} 个样本（这些样本的 inverse_norm 不准确）")
+            print(f"⚠️  截取前 {skip_samples} 个样本（这些样本的 inverse_norm 值为 0）")
             print(f"   训练集: {len(self.X_train)} -> {len(self.X_train) - skip_samples} 样本")
             
-            # 更新训练集
+            # 更新训练集和测试集
             self.X_train = self.X_train_full[skip_samples:]
             self.y_train = y_train_restored[skip_samples:]
             self.ret_train = ret_train_restored[skip_samples:]
             
-            # 测试集也做同样处理
             self.X_test = self.X_test_full[skip_samples:]
             self.y_test = y_test_restored[skip_samples:]
             self.ret_test = ret_test_restored[skip_samples:]
             
+            # 重要：X_all 需要从 train 和 test 区域分别截取，然后合并
+            # 因为 X_all_full = [train_full, test_full]
+            # 我们需要 X_all = [train_full[skip:], test_full[skip:]]
+            train_start_in_all = 0
+            train_end_in_all = self.train_len_full
+            test_start_in_all = self.train_len_full
+            test_end_in_all = self.train_len_full + self.test_len_full
+            
+            X_all_train_part = self.X_all_full[train_start_in_all + skip_samples:train_end_in_all]
+            X_all_test_part = self.X_all_full[test_start_in_all + skip_samples:test_end_in_all]
+            
+            if isinstance(self.X_all_full, np.ndarray):
+                self.X_all = np.vstack([X_all_train_part, X_all_test_part])
+            else:
+                self.X_all = pd.concat([X_all_train_part, X_all_test_part], axis=0)
+            
             print(f"   测试集: {len(self.X_test_full)} -> {len(self.X_test)} 样本")
+            print(f"   X_all: {len(self.X_all_full)} -> {len(self.X_all)} 样本")
             print(f"✓ inverse_norm 完成: y_train 均值={np.mean(self.y_train):.6f}, 标准差={np.std(self.y_train):.6f}")
+            print(f"✓ 数据长度验证: len(X_all)={len(self.X_all)}, len(y_train)+len(y_test)={len(self.y_train)+len(self.y_test)}")
         else:
             print(f"⚠️  当前 data_source ({self.data_source}) 不提供原始数据，跳过 inverse_norm")
         
@@ -365,8 +387,19 @@ class GPAnalyzer:
 
         result = evaluator.evaluate(factor_expression)  # 解析因子
         result = np.nan_to_num(result)
+        
+        # 调试：检查长度
+        expected_len = len(self.y_train) + len(self.y_test)
+        if len(result) != expected_len:
+            print(f"⚠️  长度不匹配警告:")
+            print(f"   len(result) = {len(result)}")
+            print(f"   len(X_all) = {len(self.X_all)}")
+            print(f"   len(y_train) + len(y_test) = {len(self.y_train)} + {len(self.y_test)} = {expected_len}")
+            print(f"   差值 = {len(result) - expected_len}")
+        
         # 训练集和测试集拆分
         result_train, result_test = result[:len(self.y_train)], result[len(self.y_train):]
+        
         if metric in norm_y_list :
             fitness_train = fitness._fitness_map[metric](self.y_train, pd.Series(result_train), np.ones(len(self.y_train)))
             fitness_test = fitness._fitness_map[metric](self.y_test, pd.Series(result_test), np.ones(len(self.y_test)))
@@ -413,6 +446,7 @@ class GPAnalyzer:
         """
         all_metrics = list(fitness._fitness_map.keys())
         all_metrics = [item for item in all_metrics if item not in ['max_ic_train', 'given_ic_test']]
+        
         for metric in all_metrics:
             fitness_train, fitness_test = self.evaluate_single_factor(str(factor_expression), metric)
 

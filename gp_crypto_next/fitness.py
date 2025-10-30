@@ -476,7 +476,7 @@ def _calculate_rolling_sharp(y, y_pred,w,t=rolling_w, period_per_year=times_per_
     annual_std = rets.rolling(window=t).std()
     sharpe_ratio = rolling_returns / annual_std * np.sqrt(period_per_year)
 
-    return np.nan_to_num(sharpe_ratio)
+    return np.mean(np.nan_to_num(sharpe_ratio))
 
 
 
@@ -484,20 +484,38 @@ def _calculate_rolling_ic(y, y_pred, w, t=rolling_w, method='pearson'):
     """计算滚动窗口下的IC（相关系数）序列。
 
     method: 'pearson' 或 'spearman'
-    返回与输入同长度的Series（数值型数组）。
+    返回标量：滚动IC的平均值。
+    
+    参考 _calculate_average_pic 和 _calculate_average_sic 的实现方式
     """
     y_pred = np.nan_to_num(y_pred).flatten()
     y = np.nan_to_num(y).flatten()
-
-    s_pred = pd.Series(y_pred)
-    s_true = pd.Series(y)
-
-    if method == 'spearman':
-        rolling_ic = s_pred.rolling(window=t).corr(s_true, method='spearman')
-    else:
-        rolling_ic = s_pred.rolling(window=t).corr(s_true, method='pearson')
-
-    return np.nan_to_num(rolling_ic)
+    
+    n = len(y)
+    if n < t:
+        return 0.0
+    
+    # 计算每个窗口的 IC
+    ics = []
+    for i in range(t, n):
+        window_pred = y_pred[i-t:i]
+        window_true = y[i-t:i]
+        
+        # 根据 method 选择相关系数计算方式
+        if method == 'spearman':
+            ic = spearmanr(window_pred, window_true)[0]
+        else:
+            ic = pearsonr(window_pred, window_true)[0]
+        
+        # 处理 NaN 值
+        if not np.isnan(ic):
+            ics.append(ic)
+    
+    # 返回平均 IC
+    if len(ics) == 0:
+        return 0.0
+    
+    return np.mean(ics)
 
 
 def _calculate_rolling_rank_sic(y, y_pred, w, t=rolling_w):
