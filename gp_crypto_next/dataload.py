@@ -1283,8 +1283,8 @@ def data_prepare_coarse_grain_rolling(
     # 选择处理模式：并行或串行
     if use_parallel:
         # ========== 并行处理模式（优化chunksize） ==========
-        # n_cores = cpu_count() if n_jobs == -1 else n_jobs
-        n_cores = 1
+        n_cores = cpu_count() if n_jobs == -1 else n_jobs
+        # n_cores = 1
 
         # 动态优化 chunksize（保留这个优化）
         optimal_chunksize = max(1, len(fine_grain_timestamps) // (n_cores * 4))

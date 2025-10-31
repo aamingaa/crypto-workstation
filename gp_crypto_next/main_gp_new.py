@@ -101,6 +101,7 @@ class GPAnalyzer:
         self.metric = self.gp_settings.get('metric', 'pearson')
         self.verbose_logging = self.config.get('verbose_logging', False)
         self.rolling_window = self.config.get('rolling_window', 2000)
+        self.inverse_rolling_window = self.config.get('inverse_rolling_window', 200)
         self.annual_bars = calculate_annual_bars(self.freq)
         self.data_dir = self.config.get('data_dir', '')
         
@@ -259,14 +260,14 @@ class GPAnalyzer:
                 self.X_all_full = self.X_all.copy()  # ← 重要：也要保存 X_all！
             
             # 还原训练集和测试集的数据
-            print(f"使用 inverse_norm 将标准化的 label 还原为原始尺度 (window={self.rolling_window})")
-            y_train_restored = inverse_norm(self.y_train_normalized, self.y_p_train_origin, window=self.rolling_window)
-            ret_train_restored = inverse_norm(self.ret_train_normalized, self.y_p_train_origin, window=self.rolling_window)
-            y_test_restored = inverse_norm(self.y_test_normalized, self.y_p_test_origin, window=self.rolling_window)
-            ret_test_restored = inverse_norm(self.ret_test_normalized, self.y_p_test_origin, window=self.rolling_window)
+            print(f"使用 inverse_norm 将标准化的 label 还原为原始尺度 (window={self.inverse_rolling_window})")
+            y_train_restored = inverse_norm(self.y_train_normalized, self.y_p_train_origin, window=self.inverse_rolling_window)
+            ret_train_restored = inverse_norm(self.ret_train_normalized, self.y_p_train_origin, window=self.inverse_rolling_window)
+            y_test_restored = inverse_norm(self.y_test_normalized, self.y_p_test_origin, window=self.inverse_rolling_window)
+            ret_test_restored = inverse_norm(self.ret_test_normalized, self.y_p_test_origin, window=self.inverse_rolling_window)
             
             # 截取掉前 window+1 个无效样本（inverse_norm 返回的前面是 0）
-            skip_samples = self.rolling_window + 1
+            skip_samples = self.inverse_rolling_window + 1
             print(f"⚠️  截取前 {skip_samples} 个样本（这些样本的 inverse_norm 值为 0）")
             print(f"   训练集: {len(self.X_train)} -> {len(self.X_train) - skip_samples} 样本")
             
@@ -303,12 +304,22 @@ class GPAnalyzer:
             print(f"⚠️  当前 data_source ({self.data_source}) 不提供原始数据，跳过 inverse_norm")
         
         # 根据 metric 类型选择使用哪个 label 进行训练
+        print(f"\n📊 开始训练遗传编程模型 (metric={self.metric})")
+        print(f"   - 训练数据形状: X_train={self.X_train.shape}")
+        print(f"   - X_train统计: 均值={np.mean(self.X_train):.6f}, 标准差={np.std(self.X_train):.6f}")
+        
         if self.metric in norm_y_list:
             # IC 类指标使用 y_train
+            print(f"   - 使用 y_train 作为标签")
+            print(f"   - y_train统计: 均值={np.mean(self.y_train):.6f}, 标准差={np.std(self.y_train):.6f}")
             self.est_gp = self.gp(self.X_train, self.y_train, feature_names=self.feature_names, random_state=random_state)
         else:
             # Sharpe 类指标使用 ret_train
+            print(f"   - 使用 ret_train 作为标签")
+            print(f"   - ret_train统计: 均值={np.mean(self.ret_train):.6f}, 标准差={np.std(self.ret_train):.6f}")
             self.est_gp = self.gp(self.X_train, self.ret_train, feature_names=self.feature_names, random_state=random_state)
+        
+        print(f"✓ 遗传编程训练完成")
            
         
         
@@ -450,8 +461,8 @@ class GPAnalyzer:
         for metric in all_metrics:
             fitness_train, fitness_test = self.evaluate_single_factor(str(factor_expression), metric)
 
-            print(f"expression_fitness_train = {fitness_train}")
-            print(f"expression_fitness_test = {fitness_test}")
+            print(f"metric={metric}, expression_fitness_train = {fitness_train}")
+            print(f"metric={metric}, expression_fitness_test = {fitness_test}")
 
             self.best_programs_df_dedup.loc[
                 self.best_programs_df_dedup['expression'] == factor_expression, f'fitness_{metric}_train'] = fitness_train
@@ -473,8 +484,60 @@ class GPAnalyzer:
         self.best_programs_df_dedup = self.best_programs_df.drop_duplicates(subset=['expression'], keep='first')
 
         factor_expressions = [str(prog) for prog in self.est_gp._best_programs]
+        
+        # ===== 调试代码开始 =====
+        print(f"\n🔍 调试信息：检查 factors_pred_train 为什么都是 0")
+        print(f"1. _best_programs 数量: {len(self.est_gp._best_programs)}")
+        print(f"2. X_train 形状: {self.X_train.shape}")
+        print(f"3. X_train 统计信息:")
+        print(f"   - 均值: {np.mean(self.X_train):.6f}")
+        print(f"   - 标准差: {np.std(self.X_train):.6f}")
+        print(f"   - 最小值: {np.min(self.X_train):.6f}")
+        print(f"   - 最大值: {np.max(self.X_train):.6f}")
+        print(f"   - 是否全为0: {np.all(self.X_train == 0)}")
+        print(f"   - NaN数量: {np.sum(np.isnan(self.X_train))}")
+        
+        if len(self.est_gp._best_programs) > 0:
+            print(f"\n4. 检查前3个程序:")
+            for i, prog in enumerate(self.est_gp._best_programs[:3]):
+                print(f"   程序 {i+1}:")
+                print(f"   - 表达式: {str(prog)}")
+                print(f"   - fitness: {prog.fitness_}")
+                print(f"   - depth: {prog.depth_}")
+                print(f"   - length: {prog.length_}")
+                
+                # 手动执行一次看看结果
+                try:
+                    result = prog.execute(self.X_train)
+                    print(f"   - 执行结果统计:")
+                    print(f"     * 均值: {np.mean(result):.6f}")
+                    print(f"     * 标准差: {np.std(result):.6f}")
+                    print(f"     * 最小值: {np.min(result):.6f}")
+                    print(f"     * 最大值: {np.max(result):.6f}")
+                    print(f"     * 是否全为0: {np.all(result == 0)}")
+                    print(f"     * NaN数量: {np.sum(np.isnan(result))}")
+                    print(f"     * 前10个值: {result[:10]}")
+                except Exception as e:
+                    print(f"   - 执行出错: {e}")
+        else:
+            print(f"⚠️  警告: _best_programs 为空！")
+        # ===== 调试代码结束 =====
+        
         factors_pred_train = self.est_gp.transform(self.X_train)
         factors_pred_test = self.est_gp.transform(self.X_test)
+        
+        # ===== 继续调试 =====
+        print(f"\n5. transform() 的结果:")
+        print(f"   - factors_pred_train 形状: {factors_pred_train.shape}")
+        print(f"   - factors_pred_train 统计:")
+        print(f"     * 均值: {np.mean(factors_pred_train):.6f}")
+        print(f"     * 标准差: {np.std(factors_pred_train):.6f}")
+        print(f"     * 最小值: {np.min(factors_pred_train):.6f}")
+        print(f"     * 最大值: {np.max(factors_pred_train):.6f}")
+        print(f"     * 是否全为0: {np.all(factors_pred_train == 0)}")
+        print(f"   - 前3行数据:")
+        print(factors_pred_train[:3])
+        print(f"=" * 80 + "\n")
 
         self.pred_data_df_train = pd.DataFrame(factors_pred_train, columns=factor_expressions)
         self.pred_data_df_test = pd.DataFrame(factors_pred_test, columns=factor_expressions)
