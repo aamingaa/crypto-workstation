@@ -241,70 +241,14 @@ class GPAnalyzer:
         """
         fct_generate的一部分
         执行遗传编程过程。
-        如果有原始数据(y_p_train_origin)，使用 inverse_norm 将标准化的 label 还原为原始尺度后再训练。
-        """
-        # 检查是否有原始数据可用（仅 coarse_grain 数据源提供）
-        if hasattr(self, 'y_p_train_origin') and hasattr(self, 'y_p_test_origin'):
-            # 保存原始的标准化数据（可能后续需要）
-            if not hasattr(self, 'y_train_normalized'):
-                # 保存原始长度，用于后续的数据切分
-                self.train_len_full = len(self.y_train)
-                self.test_len_full = len(self.y_test)
-                
-                self.y_train_normalized = self.y_train.copy()
-                self.ret_train_normalized = self.ret_train.copy()
-                self.y_test_normalized = self.y_test.copy()
-                self.ret_test_normalized = self.ret_test.copy()
-                self.X_train_full = self.X_train.copy()
-                self.X_test_full = self.X_test.copy()
-                self.X_all_full = self.X_all.copy()  # ← 重要：也要保存 X_all！
-            
-            # 还原训练集和测试集的数据
-            print(f"使用 inverse_norm 将标准化的 label 还原为原始尺度 (window={self.inverse_rolling_window})")
-            y_train_restored = inverse_norm(self.y_train_normalized, self.y_p_train_origin, window=self.inverse_rolling_window)
-            ret_train_restored = inverse_norm(self.ret_train_normalized, self.y_p_train_origin, window=self.inverse_rolling_window)
-            y_test_restored = inverse_norm(self.y_test_normalized, self.y_p_test_origin, window=self.inverse_rolling_window)
-            ret_test_restored = inverse_norm(self.ret_test_normalized, self.y_p_test_origin, window=self.inverse_rolling_window)
-            
-            # 截取掉前 window+1 个无效样本（inverse_norm 返回的前面是 0）
-            skip_samples = self.inverse_rolling_window + 1
-            print(f"⚠️  截取前 {skip_samples} 个样本（这些样本的 inverse_norm 值为 0）")
-            print(f"   训练集: {len(self.X_train)} -> {len(self.X_train) - skip_samples} 样本")
-            
-            # 更新训练集和测试集
-            self.X_train = self.X_train_full[skip_samples:]
-            self.y_train = y_train_restored[skip_samples:]
-            self.ret_train = ret_train_restored[skip_samples:]
-            
-            self.X_test = self.X_test_full[skip_samples:]
-            self.y_test = y_test_restored[skip_samples:]
-            self.ret_test = ret_test_restored[skip_samples:]
-            
-            # 重要：X_all 需要从 train 和 test 区域分别截取，然后合并
-            # 因为 X_all_full = [train_full, test_full]
-            # 我们需要 X_all = [train_full[skip:], test_full[skip:]]
-            train_start_in_all = 0
-            train_end_in_all = self.train_len_full
-            test_start_in_all = self.train_len_full
-            test_end_in_all = self.train_len_full + self.test_len_full
-            
-            X_all_train_part = self.X_all_full[train_start_in_all + skip_samples:train_end_in_all]
-            X_all_test_part = self.X_all_full[test_start_in_all + skip_samples:test_end_in_all]
-            
-            if isinstance(self.X_all_full, np.ndarray):
-                self.X_all = np.vstack([X_all_train_part, X_all_test_part])
-            else:
-                self.X_all = pd.concat([X_all_train_part, X_all_test_part], axis=0)
-            
-            print(f"   测试集: {len(self.X_test_full)} -> {len(self.X_test)} 样本")
-            print(f"   X_all: {len(self.X_all_full)} -> {len(self.X_all)} 样本")
-            print(f"✓ inverse_norm 完成: y_train 均值={np.mean(self.y_train):.6f}, 标准差={np.std(self.y_train):.6f}")
-            print(f"✓ 数据长度验证: len(X_all)={len(self.X_all)}, len(y_train)+len(y_test)={len(self.y_train)+len(self.y_test)}")
-        else:
-            print(f"⚠️  当前 data_source ({self.data_source}) 不提供原始数据，跳过 inverse_norm")
         
+        ✅ 改进：直接使用标准化后的数据进行训练，保持数值稳定性和收敛速度。
+        标准化的作用就是让模型更好地学习，不应该在训练前反标准化。
+        评估指标（IC、Sharpe等）在标准化数据上计算是合理的，因为它们是相对指标。
+        """
         # 根据 metric 类型选择使用哪个 label 进行训练
         print(f"\n📊 开始训练遗传编程模型 (metric={self.metric})")
+        print(f"   ✅ 使用标准化后的数据进行训练（数值更稳定、收敛更快）")
         print(f"   - 训练数据形状: X_train={self.X_train.shape}")
         print(f"   - X_train统计: 均值={np.mean(self.X_train):.6f}, 标准差={np.std(self.X_train):.6f}")
         
