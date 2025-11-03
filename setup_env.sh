@@ -40,80 +40,159 @@ print_header() {
 }
 
 # =============================================================================
-# 1. 检查并安装 Python 3.8 (Linux)
+# 1. 检查并安装 Python (>= 3.8)
 # =============================================================================
 print_header "步骤 1: 检查 Python 环境"
 
-# 检查是否安装了 python3.8
-if command -v python3.8 &> /dev/null; then
-    print_success "检测到 Python 3.8"
-    PYTHON_CMD="python3.8"
-elif command -v python3 &> /dev/null; then
-    # 检查 python3 版本
-    if python3 -c "import sys; exit(0 if sys.version_info >= (3, 8) and sys.version_info < (3, 9) else 1)" 2>/dev/null; then
-        print_success "检测到 Python 3.8"
-        PYTHON_CMD="python3"
-    elif python3 -c "import sys; exit(0 if sys.version_info >= (3, 8) else 1)" 2>/dev/null; then
-        PYTHON_VERSION=$(python3 --version | awk '{print $2}')
-        print_warning "检测到 Python $PYTHON_VERSION (推荐使用 3.8)"
-        PYTHON_CMD="python3"
+PYTHON_CMD=""
+PYTHON_VERSION=""
+
+# 优先检查 python3 命令
+if command -v python3 &> /dev/null; then
+    PYTHON_VERSION=$(python3 --version 2>&1 | awk '{print $2}')
+    print_info "检测到 python3: $PYTHON_VERSION"
+    
+    # 检查版本是否 >= 3.8
+    if python3 -c "import sys; exit(0 if sys.version_info >= (3, 8) else 1)" 2>/dev/null; then
+        # 检查是否有 venv 模块
+        if python3 -m venv --help &> /dev/null; then
+            print_success "Python $PYTHON_VERSION 满足要求 (>= 3.8，含 venv 模块)"
+            PYTHON_CMD="python3"
+        else
+            print_warning "Python $PYTHON_VERSION 版本满足要求，但缺少 venv 模块"
+            PYTHON_CMD=""
+        fi
     else
-        print_warning "Python 版本过低，需要安装 Python 3.8"
+        print_warning "Python $PYTHON_VERSION 版本过低 (需要 >= 3.8)"
         PYTHON_CMD=""
     fi
-else
-    print_warning "未找到 Python"
-    PYTHON_CMD=""
+fi
+
+# 如果 python3 不可用或不满足要求，尝试 python3.8
+if [ -z "$PYTHON_CMD" ] && command -v python3.8 &> /dev/null; then
+    PYTHON_VERSION=$(python3.8 --version 2>&1 | awk '{print $2}')
+    print_info "检测到 python3.8: $PYTHON_VERSION"
+    
+    if python3.8 -m venv --help &> /dev/null; then
+        print_success "Python 3.8 可用 (含 venv 模块)"
+        PYTHON_CMD="python3.8"
+    else
+        print_warning "Python 3.8 可用，但缺少 venv 模块"
+    fi
 fi
 
 # 如果没有合适的 Python，则安装
 if [ -z "$PYTHON_CMD" ]; then
-    print_info "准备安装 Python 3.8..."
-    
     if command -v apt-get &> /dev/null; then
         # Debian/Ubuntu
         print_info "检测到 apt 包管理器 (Ubuntu/Debian)"
-        read -p "是否安装 Python 3.8？(需要 sudo 权限) (Y/n): " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-            print_info "更新软件源..."
-            sudo apt-get update
+        
+        # 检查是否有 python3 但只是缺少 venv
+        if command -v python3 &> /dev/null; then
+            CURRENT_VERSION=$(python3 --version 2>&1 | awk '{print $2}')
+            MAJOR_MINOR=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
             
-            print_info "安装 Python 3.8 和相关工具..."
-            sudo apt-get install -y python3.8 python3.8-venv python3.8-dev python3-pip
-            
-            # 创建 python3.8 软链接（如果不存在）
-            if ! command -v python3.8 &> /dev/null; then
-                print_error "Python 3.8 安装失败"
+            if python3 -c "import sys; exit(0 if sys.version_info >= (3, 8) else 1)" 2>/dev/null; then
+                # Python 版本 >= 3.8，只需要安装 venv
+                print_info "Python $CURRENT_VERSION 已安装，只需安装 venv 模块"
+                read -p "是否安装 python$MAJOR_MINOR-venv？(需要 sudo 权限) (Y/n): " -n 1 -r
+                echo
+                if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                    print_info "安装 python$MAJOR_MINOR-venv..."
+                    sudo apt-get update
+                    sudo apt-get install -y python${MAJOR_MINOR}-venv python${MAJOR_MINOR}-dev
+                    print_success "python$MAJOR_MINOR-venv 安装完成"
+                    PYTHON_CMD="python3"
+                else
+                    print_error "需要 venv 模块才能继续"
+                    exit 1
+                fi
+            else
+                # Python 版本 < 3.8，需要安装 Python 3.8
+                print_warning "当前 Python $CURRENT_VERSION 版本过低"
+                print_info "准备安装 Python 3.8..."
+                read -p "是否安装 Python 3.8？(需要 sudo 权限) (Y/n): " -n 1 -r
+                echo
+                if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                    print_info "更新软件源..."
+                    sudo apt-get update
+                    
+                    print_info "安装 Python 3.8 和相关工具..."
+                    sudo apt-get install -y python3.8 python3.8-venv python3.8-dev python3-pip
+                    
+                    if ! command -v python3.8 &> /dev/null; then
+                        print_error "Python 3.8 安装失败"
+                        exit 1
+                    fi
+                    
+                    print_success "Python 3.8 安装完成"
+                    PYTHON_CMD="python3.8"
+                else
+                    print_error "需要 Python 3.8 或更高版本"
+                    exit 1
+                fi
+            fi
+        else
+            # 完全没有 Python，安装 Python 3.8
+            print_info "未检测到 Python，准备安装 Python 3.8..."
+            read -p "是否安装 Python 3.8？(需要 sudo 权限) (Y/n): " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                print_info "更新软件源..."
+                sudo apt-get update
+                
+                print_info "安装 Python 3.8 和相关工具..."
+                sudo apt-get install -y python3.8 python3.8-venv python3.8-dev python3-pip
+                
+                if ! command -v python3.8 &> /dev/null; then
+                    print_error "Python 3.8 安装失败"
+                    exit 1
+                fi
+                
+                print_success "Python 3.8 安装完成"
+                PYTHON_CMD="python3.8"
+            else
+                print_error "需要 Python 3.8 或更高版本"
                 exit 1
             fi
-            
-            print_success "Python 3.8 安装完成"
-            PYTHON_CMD="python3.8"
-        else
-            print_error "需要 Python 3.8 才能继续"
-            exit 1
         fi
         
     elif command -v yum &> /dev/null; then
         # RHEL/CentOS/Fedora
         print_info "检测到 yum 包管理器 (CentOS/RHEL/Fedora)"
-        read -p "是否安装 Python 3.8？(需要 sudo 权限) (Y/n): " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-            print_info "安装 Python 3.8 和相关工具..."
-            sudo yum install -y python38 python38-pip python38-devel
-            
-            if ! command -v python3.8 &> /dev/null; then
-                print_error "Python 3.8 安装失败"
+        
+        if command -v python3.8 &> /dev/null; then
+            print_info "Python 3.8 已安装，但缺少 venv 模块"
+            read -p "是否安装 Python 3.8 开发工具？(需要 sudo 权限) (Y/n): " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                print_info "安装 Python 3.8 开发工具..."
+                sudo yum install -y python38-devel
+                print_success "Python 3.8 开发工具安装完成"
+                PYTHON_CMD="python3.8"
+            else
+                print_error "需要 Python 3.8 开发工具才能继续"
                 exit 1
             fi
-            
-            print_success "Python 3.8 安装完成"
-            PYTHON_CMD="python3.8"
         else
-            print_error "需要 Python 3.8 才能继续"
-            exit 1
+            print_info "准备安装 Python 3.8 及相关工具..."
+            read -p "是否安装 Python 3.8？(需要 sudo 权限) (Y/n): " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                print_info "安装 Python 3.8 和相关工具..."
+                sudo yum install -y python38 python38-pip python38-devel
+                
+                if ! command -v python3.8 &> /dev/null; then
+                    print_error "Python 3.8 安装失败"
+                    exit 1
+                fi
+                
+                print_success "Python 3.8 安装完成"
+                PYTHON_CMD="python3.8"
+            else
+                print_error "需要 Python 3.8 才能继续"
+                exit 1
+            fi
         fi
         
     else
