@@ -40,25 +40,107 @@ print_header() {
 }
 
 # =============================================================================
-# 1. 检查 Python 版本
+# 1. 检查并安装 Python 3.8 (Linux)
 # =============================================================================
-print_header "步骤 1: 检查 Python 版本"
+print_header "步骤 1: 检查 Python 环境"
 
-if ! command -v python3 &> /dev/null; then
-    print_error "未找到 python3，请先安装 Python 3.8 或更高版本"
+# 检查是否安装了 python3.8
+if command -v python3.8 &> /dev/null; then
+    print_success "检测到 Python 3.8"
+    PYTHON_CMD="python3.8"
+elif command -v python3 &> /dev/null; then
+    # 检查 python3 版本
+    if python3 -c "import sys; exit(0 if sys.version_info >= (3, 8) and sys.version_info < (3, 9) else 1)" 2>/dev/null; then
+        print_success "检测到 Python 3.8"
+        PYTHON_CMD="python3"
+    elif python3 -c "import sys; exit(0 if sys.version_info >= (3, 8) else 1)" 2>/dev/null; then
+        PYTHON_VERSION=$(python3 --version | awk '{print $2}')
+        print_warning "检测到 Python $PYTHON_VERSION (推荐使用 3.8)"
+        PYTHON_CMD="python3"
+    else
+        print_warning "Python 版本过低，需要安装 Python 3.8"
+        PYTHON_CMD=""
+    fi
+else
+    print_warning "未找到 Python"
+    PYTHON_CMD=""
+fi
+
+# 如果没有合适的 Python，则安装
+if [ -z "$PYTHON_CMD" ]; then
+    print_info "准备安装 Python 3.8..."
+    
+    if command -v apt-get &> /dev/null; then
+        # Debian/Ubuntu
+        print_info "检测到 apt 包管理器 (Ubuntu/Debian)"
+        read -p "是否安装 Python 3.8？(需要 sudo 权限) (Y/n): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            print_info "更新软件源..."
+            sudo apt-get update
+            
+            print_info "安装 Python 3.8 和相关工具..."
+            sudo apt-get install -y python3.8 python3.8-venv python3.8-dev python3-pip
+            
+            # 创建 python3.8 软链接（如果不存在）
+            if ! command -v python3.8 &> /dev/null; then
+                print_error "Python 3.8 安装失败"
+                exit 1
+            fi
+            
+            print_success "Python 3.8 安装完成"
+            PYTHON_CMD="python3.8"
+        else
+            print_error "需要 Python 3.8 才能继续"
+            exit 1
+        fi
+        
+    elif command -v yum &> /dev/null; then
+        # RHEL/CentOS/Fedora
+        print_info "检测到 yum 包管理器 (CentOS/RHEL/Fedora)"
+        read -p "是否安装 Python 3.8？(需要 sudo 权限) (Y/n): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            print_info "安装 Python 3.8 和相关工具..."
+            sudo yum install -y python38 python38-pip python38-devel
+            
+            if ! command -v python3.8 &> /dev/null; then
+                print_error "Python 3.8 安装失败"
+                exit 1
+            fi
+            
+            print_success "Python 3.8 安装完成"
+            PYTHON_CMD="python3.8"
+        else
+            print_error "需要 Python 3.8 才能继续"
+            exit 1
+        fi
+        
+    else
+        print_error "未检测到支持的包管理器 (apt/yum)"
+        print_info "请手动安装 Python 3.8："
+        echo ""
+        echo "Ubuntu/Debian:"
+        echo "  sudo apt-get update"
+        echo "  sudo apt-get install -y python3.8 python3.8-venv python3.8-dev python3-pip"
+        echo ""
+        echo "CentOS/RHEL:"
+        echo "  sudo yum install -y python38 python38-pip python38-devel"
+        exit 1
+    fi
+fi
+
+# 最终检查
+PYTHON_VERSION=$($PYTHON_CMD --version 2>&1 | awk '{print $2}')
+print_info "使用 Python 版本: $PYTHON_VERSION"
+print_info "Python 命令: $PYTHON_CMD"
+
+if ! $PYTHON_CMD -c "import sys; exit(0 if sys.version_info >= (3, 8) else 1)" 2>/dev/null; then
+    print_error "Python 版本不满足要求 (需要 >= 3.8)"
     exit 1
 fi
 
-PYTHON_VERSION=$(python3 --version | awk '{print $2}')
-print_info "检测到 Python 版本: $PYTHON_VERSION"
-
-# 检查是否满足最低版本要求（3.8+）
-REQUIRED_VERSION="3.8"
-if ! python3 -c "import sys; exit(0 if sys.version_info >= (3, 8) else 1)"; then
-    print_error "Python 版本过低，需要 Python 3.8 或更高版本"
-    exit 1
-fi
-print_success "Python 版本满足要求"
+print_success "Python 环境检查完成"
 
 # =============================================================================
 # 2. 创建虚拟环境
@@ -80,8 +162,8 @@ if [ -d "$VENV_DIR" ]; then
 fi
 
 if [ ! -d "$VENV_DIR" ]; then
-    print_info "创建虚拟环境: $VENV_DIR"
-    python3 -m venv "$VENV_DIR"
+    print_info "创建虚拟环境: $VENV_DIR (使用 $PYTHON_CMD)"
+    $PYTHON_CMD -m venv "$VENV_DIR"
     print_success "虚拟环境创建成功"
 else
     print_info "跳过虚拟环境创建"
@@ -177,7 +259,7 @@ REQUIRED_PACKAGES=("pandas" "numpy" "sklearn" "xgboost" "lightgbm" "matplotlib" 
 ALL_SUCCESS=true
 
 for package in "${REQUIRED_PACKAGES[@]}"; do
-    if python3 -c "import $package" 2>/dev/null; then
+    if python -c "import $package" 2>/dev/null; then
         print_success "$package ✓"
     else
         print_error "$package ✗"
