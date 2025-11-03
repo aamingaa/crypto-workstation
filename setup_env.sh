@@ -161,21 +161,49 @@ if [ -z "$PYTHON_CMD" ]; then
         # RHEL/CentOS/Fedora
         print_info "检测到 yum 包管理器 (CentOS/RHEL/Fedora)"
         
-        if command -v python3.8 &> /dev/null; then
-            print_info "Python 3.8 已安装，但缺少 venv 模块"
-            read -p "是否安装 Python 3.8 开发工具？(需要 sudo 权限) (Y/n): " -n 1 -r
-            echo
-            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-                print_info "安装 Python 3.8 开发工具..."
-                sudo yum install -y python38-devel
-                print_success "Python 3.8 开发工具安装完成"
-                PYTHON_CMD="python3.8"
+        if command -v python3 &> /dev/null; then
+            CURRENT_VERSION=$(python3 --version 2>&1 | awk '{print $2}')
+            
+            if python3 -c "import sys; exit(0 if sys.version_info >= (3, 8) else 1)" 2>/dev/null; then
+                # Python 版本 >= 3.8，只需要安装 venv
+                print_info "Python $CURRENT_VERSION 已安装，只需安装开发工具"
+                read -p "是否安装 Python 开发工具？(需要 sudo 权限) (Y/n): " -n 1 -r
+                echo
+                if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                    print_info "安装 Python 开发工具..."
+                    # CentOS/RHEL 上 python3 通常自带 venv，只需要 devel 包
+                    sudo yum install -y python3-devel
+                    print_success "Python 开发工具安装完成"
+                    PYTHON_CMD="python3"
+                else
+                    print_error "需要 Python 开发工具才能继续"
+                    exit 1
+                fi
             else
-                print_error "需要 Python 3.8 开发工具才能继续"
-                exit 1
+                # Python 版本 < 3.8，需要安装 Python 3.8
+                print_warning "当前 Python $CURRENT_VERSION 版本过低"
+                print_info "准备安装 Python 3.8..."
+                read -p "是否安装 Python 3.8？(需要 sudo 权限) (Y/n): " -n 1 -r
+                echo
+                if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                    print_info "安装 Python 3.8 和相关工具..."
+                    sudo yum install -y python38 python38-pip python38-devel
+                    
+                    if ! command -v python3.8 &> /dev/null; then
+                        print_error "Python 3.8 安装失败"
+                        exit 1
+                    fi
+                    
+                    print_success "Python 3.8 安装完成"
+                    PYTHON_CMD="python3.8"
+                else
+                    print_error "需要 Python 3.8 或更高版本"
+                    exit 1
+                fi
             fi
         else
-            print_info "准备安装 Python 3.8 及相关工具..."
+            # 完全没有 Python，安装 Python 3.8
+            print_info "未检测到 Python，准备安装 Python 3.8..."
             read -p "是否安装 Python 3.8？(需要 sudo 权限) (Y/n): " -n 1 -r
             echo
             if [[ ! $REPLY =~ ^[Nn]$ ]]; then
@@ -190,21 +218,25 @@ if [ -z "$PYTHON_CMD" ]; then
                 print_success "Python 3.8 安装完成"
                 PYTHON_CMD="python3.8"
             else
-                print_error "需要 Python 3.8 才能继续"
+                print_error "需要 Python 3.8 或更高版本"
                 exit 1
             fi
         fi
         
     else
         print_error "未检测到支持的包管理器 (apt/yum)"
-        print_info "请手动安装 Python 3.8："
+        print_info "请手动安装 Python 3.8 或更高版本："
         echo ""
         echo "Ubuntu/Debian:"
         echo "  sudo apt-get update"
         echo "  sudo apt-get install -y python3.8 python3.8-venv python3.8-dev python3-pip"
+        echo "  # 或者安装当前系统 Python 的 venv 模块："
+        echo "  # sudo apt-get install -y python3-venv python3-dev"
         echo ""
         echo "CentOS/RHEL:"
         echo "  sudo yum install -y python38 python38-pip python38-devel"
+        echo "  # 或者："
+        echo "  # sudo yum install -y python3-devel"
         exit 1
     fi
 fi
