@@ -521,7 +521,7 @@ class BaseSymbolic(BaseEstimator, metaclass=ABCMeta):
                 raise ValueError('Unsupported metric: %s' % self.metric)
             self._metric = _fitness_map[self.metric]
         elif isinstance(self, TransformerMixin):
-            if self.metric not in ('avg_pic', 'avg_sic', 'max_ic', 'sharp', 'calmar', 'sharpe_fixed_threshold', 'sharpe_std_threshold', 'max_ic_train', 'given_ic_test', 'max_dd', 'avg_mdd'):
+            if self.metric not in ('avg_pic', 'avg_sic', 'max_ic', 'sharp', 'calmar', 'sharpe_fixed_threshold', 'sharpe_std_threshold', 'max_ic_train', 'given_ic_test', 'max_dd', 'avg_mdd', 'rolling_rank_sic'):
                 raise ValueError('Unsupported metric: %s' % self.metric)
             self._metric = _fitness_map[self.metric]
 

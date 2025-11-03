@@ -35,7 +35,7 @@ pd.set_option('display.max_rows', 100)
 # norm_y_list = ['avg_pic','avg_sic','max_ic','max_ic_train','given_ic_test']
 # raw_y_list = ['calmar','sharp','sharpe_fixed_threshold','sharpe_std_threshold','max_dd','avg_mdd']
 
-norm_y_list = ['avg_pic','avg_sic','max_ic','max_ic_train','given_ic_test', 'rolling_rank_pic', 'rolling_rank_sic']
+norm_y_list = ['avg_pic','avg_sic','max_ic','max_ic_train','given_ic_test', 'rolling_pic', 'rolling_rank_sic']
 raw_y_list = ['calmar','sharp','sharpe_fixed_threshold','sharpe_std_threshold','max_dd','avg_mdd', 'rolling_sharp', 'avg_sharpe_ratio']
 
 def calculate_annual_bars(freq: str) -> int:
@@ -430,41 +430,119 @@ class GPAnalyzer:
         factor_expressions = [str(prog) for prog in self.est_gp._best_programs]
         
         # ===== 调试代码开始 =====
-        print(f"\n🔍 调试信息：检查 factors_pred_train 为什么都是 0")
-        print(f"1. _best_programs 数量: {len(self.est_gp._best_programs)}")
-        print(f"2. X_train 形状: {self.X_train.shape}")
-        print(f"3. X_train 统计信息:")
-        print(f"   - 均值: {np.mean(self.X_train):.6f}")
-        print(f"   - 标准差: {np.std(self.X_train):.6f}")
-        print(f"   - 最小值: {np.min(self.X_train):.6f}")
-        print(f"   - 最大值: {np.max(self.X_train):.6f}")
-        print(f"   - 是否全为0: {np.all(self.X_train == 0)}")
-        print(f"   - NaN数量: {np.sum(np.isnan(self.X_train))}")
+        print(f"\n{'='*80}")
+        print(f"🔍 完整诊断：GP 输出为 0 的原因")
+        print(f"{'='*80}\n")
+        
+        # 1. 检查输入数据
+        print(f"1. 输入数据检查:")
+        print(f"   X_train 形状: {self.X_train.shape}")
+        print(f"   X_train 统计:")
+        print(f"     - 均值: {np.mean(self.X_train):.6f}")
+        print(f"     - 标准差: {np.std(self.X_train):.6f}")
+        print(f"     - 最小值: {np.min(self.X_train):.6f}")
+        print(f"     - 最大值: {np.max(self.X_train):.6f}")
+        print(f"     - 零值占比: {np.sum(self.X_train == 0) / self.X_train.size * 100:.2f}%")
+        print(f"     - NaN占比: {np.sum(np.isnan(self.X_train)) / self.X_train.size * 100:.2f}%")
+        print(f"     - Inf占比: {np.sum(np.isinf(self.X_train)) / self.X_train.size * 100:.2f}%")
+        
+        # 检查每列特征
+        print(f"\n   各特征统计（前 10 个）:")
+        for i in range(min(10, self.X_train.shape[1])):
+            col = self.X_train[:, i]
+            feat_name = self.feature_names[i] if i < len(self.feature_names) else f'unknown_{i}'
+            print(f"   特征 {i} ({feat_name}):")
+            print(f"     均值={np.mean(col):.6f}, std={np.std(col):.6f}, "
+                  f"min={np.min(col):.6f}, max={np.max(col):.6f}, "
+                  f"零值占比={np.sum(col == 0)/len(col)*100:.1f}%")
+        
+        print(f"\n   X_train 前 3 行, 前 5 列:")
+        print(self.X_train[:3, :5])
+        
+        # 2. 检查 GP 程序
+        print(f"\n2. GP 程序检查:")
+        print(f"   _best_programs 数量: {len(self.est_gp._best_programs)}")
         
         if len(self.est_gp._best_programs) > 0:
-            print(f"\n4. 检查前3个程序:")
-            for i, prog in enumerate(self.est_gp._best_programs[:3]):
-                print(f"   程序 {i+1}:")
+            for i, prog in enumerate(self.est_gp._best_programs[:5]):
+                print(f"\n   程序 {i+1}:")
                 print(f"   - 表达式: {str(prog)}")
                 print(f"   - fitness: {prog.fitness_}")
                 print(f"   - depth: {prog.depth_}")
                 print(f"   - length: {prog.length_}")
+                print(f"   - program 结构: {prog.program[:min(10, len(prog.program))]}...")
                 
-                # 手动执行一次看看结果
+                # 手动执行
                 try:
                     result = prog.execute(self.X_train)
-                    print(f"   - 执行结果统计:")
-                    print(f"     * 均值: {np.mean(result):.6f}")
-                    print(f"     * 标准差: {np.std(result):.6f}")
-                    print(f"     * 最小值: {np.min(result):.6f}")
-                    print(f"     * 最大值: {np.max(result):.6f}")
-                    print(f"     * 是否全为0: {np.all(result == 0)}")
-                    print(f"     * NaN数量: {np.sum(np.isnan(result))}")
-                    print(f"     * 前10个值: {result[:10]}")
+                    if result is not None:
+                        print(f"   - 执行结果:")
+                        print(f"     * 类型: {type(result)}")
+                        print(f"     * 形状: {result.shape if hasattr(result, 'shape') else 'N/A'}")
+                        print(f"     * 均值: {np.mean(result):.6f}")
+                        print(f"     * 标准差: {np.std(result):.6f}")
+                        print(f"     * 最小值: {np.min(result):.6f}")
+                        print(f"     * 最大值: {np.max(result):.6f}")
+                        print(f"     * 是否全为0: {np.all(result == 0)}")
+                        print(f"     * NaN数量: {np.sum(np.isnan(result))}")
+                        print(f"     * 非零值数量: {np.sum(result != 0)}")
+                        print(f"     * 前 20 个值: {result[:20]}")
+                    else:
+                        print(f"   - 执行结果: None ❌")
                 except Exception as e:
-                    print(f"   - 执行出错: {e}")
+                    print(f"   - 执行出错: {type(e).__name__}: {e}")
+                    import traceback
+                    traceback.print_exc()
         else:
             print(f"⚠️  警告: _best_programs 为空！")
+        
+        # 3. 测试 norm() 函数
+        # print(f"\n3. 测试 norm() 函数:")
+        # from functions import norm
+        
+        # # 测试用例 1：正常随机数据
+        # test_data_1 = np.random.randn(1000) * 10 + 5
+        # result_1 = norm(test_data_1, rolling_window=100)
+        # print(f"   测试 1 (正常随机数据):")
+        # print(f"     输入: 均值={np.mean(test_data_1):.6f}, std={np.std(test_data_1):.6f}")
+        # print(f"     输出: 均值={np.mean(result_1):.6f}, std={np.std(result_1):.6f}, 全为0={np.all(result_1 == 0)}")
+        
+        # # 测试用例 2：常数
+        # test_data_2 = np.ones(1000) * 5
+        # result_2 = norm(test_data_2, rolling_window=100)
+        # print(f"   测试 2 (常数数据):")
+        # print(f"     输入: 均值={np.mean(test_data_2):.6f}, std={np.std(test_data_2):.6f}")
+        # print(f"     输出: 均值={np.mean(result_2):.6f}, std={np.std(result_2):.6f}, 全为0={np.all(result_2 == 0)}")
+        
+        # # 测试用例 3：使用实际特征
+        # if self.X_train.shape[0] >= 100 and self.X_train.shape[1] > 0:
+        #     test_data_3 = self.X_train[:, 0]
+        #     result_3 = norm(test_data_3, rolling_window=min(100, len(test_data_3)//2))
+        #     print(f"   测试 3 (实际特征 0):")
+        #     print(f"     输入: 均值={np.mean(test_data_3):.6f}, std={np.std(test_data_3):.6f}")
+        #     print(f"     输出: 均值={np.mean(result_3):.6f}, std={np.std(result_3):.6f}, 全为0={np.all(result_3 == 0)}")
+        
+        # # 4. 测试 transform()
+        # print(f"\n4. 测试 transform() 方法:")
+        # try:
+        #     # 手动执行每个程序
+        #     manual_results = []
+        #     for i, prog in enumerate(self.est_gp._best_programs[:min(3, len(self.est_gp._best_programs))]):
+        #         result = prog.execute(self.X_train)
+        #         manual_results.append(result)
+        #         print(f"   程序 {i+1} 执行结果: 均值={np.mean(result):.6f}, 全为0={np.all(result==0)}")
+            
+        #     # 手动组合
+        #     if len(manual_results) > 0:
+        #         manual_transform = np.array(manual_results).T
+        #         print(f"\n   手动 transform 结果:")
+        #         print(f"     形状: {manual_transform.shape}")
+        #         print(f"     均值: {np.mean(manual_transform):.6f}")
+        #         print(f"     是否全为0: {np.all(manual_transform == 0)}")
+        # except Exception as e:
+        #     print(f"   测试出错: {type(e).__name__}: {e}")
+        
+        # print(f"\n{'='*80}\n")
         # ===== 调试代码结束 =====
         
         factors_pred_train = self.est_gp.transform(self.X_train)

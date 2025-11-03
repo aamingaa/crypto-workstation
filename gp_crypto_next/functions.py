@@ -15,6 +15,8 @@ from joblib import wrap_non_picklable_objects
 import talib
 from numpy.lib.stride_tricks import sliding_window_view
 import warnings
+# from NormDataCheck import norm, inverse_norm
+
 warnings.filterwarnings('ignore')
 
 __all__ = ['make_function']
@@ -167,6 +169,109 @@ def norm(x, rolling_window=2000): # 20230910 checked, 不再用L2 norm，恢复�
     factor_value = factor_value.replace([np.inf, -np.inf, np.nan], 0.0) 
     # factor_value = factor_value.clip(-6, 6)
     # 最终的定稿应该是，先给他log1p再去norm，因为这样会让他的mean为0，skew为0，kurtosis为7
+    return np.nan_to_num(factor_value).flatten()
+
+
+def norm_log1p(x, rolling_window=2000):
+    """
+    先对称 log1p 压缩，再做滚动 z-score 标准化
+    
+    优势：
+    1. 压缩极端值，降低异常值影响
+    2. 保留符号和相对大小关系  
+    3. 输出接近正态分布: mean≈0, skew≈0, kurtosis≈7
+    4. 提升模型稳定性和泛化能力
+    
+    Parameters
+    ----------
+    x : array-like
+        输入因子值
+    rolling_window : int, default=2000
+        滚动窗口大小
+        
+    Returns
+    -------
+    np.ndarray
+        标准化后的因子值
+    """
+    # Step 1: 对称 log1p 压缩（保留符号）
+    arr = np.asarray(x)
+    arr = np.sign(arr) * np.log1p(np.abs(arr))
+    
+    # Step 2: 转为 DataFrame 并清理异常值
+    factors_data = pd.DataFrame(arr, columns=['factor'])
+    factors_data = factors_data.replace([np.inf, -np.inf, np.nan], 0.0)
+    
+    # Step 3: 滚动 z-score 标准化（减均值、除标准差）
+    factors_mean = factors_data.rolling(window=rolling_window, min_periods=1).mean()
+    factors_std = factors_data.rolling(window=rolling_window, min_periods=1).std()
+    factor_value = (factors_data - factors_mean) / factors_std
+    
+    # Step 4: 清理异常值并返回
+    factor_value = factor_value.replace([np.inf, -np.inf, np.nan], 0.0)
+    return np.nan_to_num(factor_value).flatten()
+
+
+def norm_log1p_adaptive(x, rolling_window=2000):
+    """
+    自适应尺度的对称 log1p 压缩 + 滚动 z-score 标准化
+    
+    与 norm_log1p 的区别：
+    - norm_log1p: 直接对原始值做 log1p
+    - norm_log1p_adaptive: 先根据均值自适应缩放，再做 log1p
+    
+    优势：
+    1. 尺度不变性：不同量级的因子处理后在相似范围
+    2. 自适应压缩：小值数据适度放大，大值数据强力压缩
+    3. 相对意义：输出表示"相对于均值的对数偏离程度"
+    4. 适合多因子混合：不同尺度的因子可以公平竞争
+    
+    适用场景：
+    - 多个因子尺度差异极大（如价格 vs 成交量 vs 波动率）
+    - 需要跨因子比较重要性
+    - 单一因子但时间跨度长、尺度变化大
+    
+    Parameters
+    ----------
+    x : array-like
+        输入因子值
+    rolling_window : int, default=2000
+        滚动窗口大小
+        
+    Returns
+    -------
+    np.ndarray
+        标准化后的因子值
+        
+    Examples
+    --------
+    >>> # 小尺度数据（价格变动率 0.01-0.1）
+    >>> small_scale = [0.01, 0.02, -0.03, 0.05]
+    >>> norm_log1p_adaptive(small_scale)
+    
+    >>> # 大尺度数据（成交量 100-10000）
+    >>> large_scale = [100, 200, -300, 500]
+    >>> norm_log1p_adaptive(large_scale)
+    """
+    # Step 1: 自适应 log1p 压缩
+    arr = np.asarray(x)
+    epsilon = 1e-8  # 防止 log(0)
+    mean_abs = np.abs(np.mean(arr))
+    
+    # 根据均值缩放后再 log1p
+    arr = np.sign(arr) * np.log1p(np.abs(arr)) / np.log1p(mean_abs + epsilon)
+    
+    # Step 2: 转为 DataFrame 并清理异常值
+    factors_data = pd.DataFrame(arr, columns=['factor'])
+    factors_data = factors_data.replace([np.inf, -np.inf, np.nan], 0.0)
+    
+    # Step 3: 滚动 z-score 标准化（减均值、除标准差）
+    factors_mean = factors_data.rolling(window=rolling_window, min_periods=1).mean()
+    factors_std = factors_data.rolling(window=rolling_window, min_periods=1).std()
+    factor_value = (factors_data - factors_mean) / factors_std
+    
+    # Step 4: 清理异常值并返回
+    factor_value = factor_value.replace([np.inf, -np.inf, np.nan], 0.0)
     return np.nan_to_num(factor_value).flatten()
 
 

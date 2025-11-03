@@ -43,10 +43,10 @@ def calculate_annual_bars(freq: str) -> int:
 
 
 # freq 频率对应的参数
-rolling_w = 2000
+rolling_w = 1000
 # freq = '30min'
-freq = '1h'
-# freq = '15min'
+# freq = '1h'
+freq = '15min'
 x_clip = 20
 y_clip = 0.2
 fee = 0.0001  # 手续费：万5
@@ -523,7 +523,7 @@ def _calculate_rolling_rank_sic(y, y_pred, w, t=rolling_w):
     return _calculate_rolling_ic(y, y_pred, w, t=t, method='spearman')
 
 
-def _calculate_rolling_rank_pic(y, y_pred, w, t=rolling_w):
+def _calculate_rolling_pic(y, y_pred, w, t=rolling_w):
     """计算滚动窗口下的Rank IC（即滚动Spearman相关）序列。"""
     return _calculate_rolling_ic(y, y_pred, w, t=t, method='pearson')
 
@@ -645,7 +645,7 @@ sharpe_std_threshold = _Fitness(function=_sharpe_std_threshold,
                             greater_is_better=True)
 rolling_rank_sic = _Fitness(function=_calculate_rolling_rank_sic,
                             greater_is_better=True)
-rolling_rank_pic = _Fitness(function=_calculate_rolling_rank_pic,
+rolling_pic = _Fitness(function=_calculate_rolling_pic,
                             greater_is_better=True)
 
 
@@ -690,7 +690,7 @@ _fitness_map =     {'avg_pic':avg_pic,
                     'given_ic_test':given_ic_test,
                     'avg_sharpe_ratio':avg_sharpe_ratio,
                     'rolling_sharp':rolling_sharp,
-                    'rolling_rank_pic':rolling_rank_pic,
+                    'rolling_pic':rolling_pic,
                     'rolling_rank_sic':rolling_rank_sic,
                     }
 
@@ -698,6 +698,6 @@ _fitness_map =     {'avg_pic':avg_pic,
 _backtest_map = {'pnl':pnl,
                  'rts':rts,
                  'rolling_sharp':rolling_sharp,
-                 'rolling_rank_pic':rolling_rank_pic,
+                 'rolling_rank_pic':rolling_pic,
                  'rolling_rank_sic':rolling_rank_sic
                 }

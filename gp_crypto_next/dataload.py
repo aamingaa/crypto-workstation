@@ -383,8 +383,10 @@ def _standardize_dataframe_columns(df: pd.DataFrame) -> pd.DataFrame:
     
     # 选择需要的列，对于缺失的列用 0 填充
     required_columns = ['o', 'h', 'l', 'c', 'vol', 'vol_ccy', 'trades',
-                       'oi', 'oi_ccy', 'toptrader_count_lsr', 'toptrader_oi_lsr', 'count_lsr',
-                       'taker_vol_lsr', 'close_time']
+                    #    'oi', 'oi_ccy', 'toptrader_count_lsr', 'toptrader_oi_lsr', 'count_lsr',
+                    #    'taker_vol_lsr', 
+                       'close_time'
+                       ]
     
     # 为缺失的列添加默认值 0
     for col in required_columns:
@@ -528,18 +530,20 @@ def resample(z: pd.DataFrame, freq: str) -> pd.DataFrame:
                                                                'c': 'last',
                                                                'vol': 'sum',
                                                                'vol_ccy': 'sum',
-                                                               'trades': 'sum',
-                                                               'oi': 'last', 
-                                                               'oi_ccy': 'last', 
-                                                               'toptrader_count_lsr':'last', 
-                                                               'toptrader_oi_lsr':'last', 
-                                                               'count_lsr':'last',
-                                                               'taker_vol_lsr':'last'})
+                                                               'trades': 'sum'
+                                                            #    'oi': 'last', 
+                                                            #    'oi_ccy': 'last', 
+                                                            #    'toptrader_count_lsr':'last', 
+                                                            #    'toptrader_oi_lsr':'last', 
+                                                            #    'count_lsr':'last',
+                                                            #    'taker_vol_lsr':'last'
+                                                               })
         # 注意resample后,比如以10min为resample的freq，9:00的数据是指9:00到9:10的数据~~
         z = z.fillna(method='ffill')   
-        z.columns = ['o', 'h', 'l', 'c', 'vol', 'vol_ccy','trades',
-               'oi', 'oi_ccy', 'toptrader_count_lsr', 'toptrader_oi_lsr', 'count_lsr',
-               'taker_vol_lsr']
+        # z.columns = ['o', 'h', 'l', 'c', 'vol', 'vol_ccy','trades',
+        #        'oi', 'oi_ccy', 'toptrader_count_lsr', 'toptrader_oi_lsr', 'count_lsr',
+        #        'taker_vol_lsr']
+        z.columns = ['o', 'h', 'l', 'c', 'vol', 'vol_ccy','trades']
 
         # 重要，这个删掉0成交的操作，不能给5分钟以内的freq进行操作，因为这种情况还是挺容易出现没有成交的，这会改变本身的分布
         # 使用正则表达式提取开头的数值部分, 判断freq的周期
@@ -1083,15 +1087,15 @@ def _process_timestamp_with_multi_offset_precompute(args):
                 feature_dict[f'{col}_last'] = col_data.iloc[-1]
                 feature_dict[f'{col}_median'] = np.median(col_data)
                 
-                if n > 2:
-                    feature_dict[f'{col}_skew'] = col_data.skew()
-                else:
-                    feature_dict[f'{col}_skew'] = 0
+                # if n > 2:
+                #     feature_dict[f'{col}_skew'] = col_data.skew()
+                # else:
+                #     feature_dict[f'{col}_skew'] = 0
                     
-                if n > 3:
-                    feature_dict[f'{col}_kurt'] = col_data.kurtosis()
-                else:
-                    feature_dict[f'{col}_kurt'] = 0
+                # if n > 3:
+                #     feature_dict[f'{col}_kurt'] = col_data.kurtosis()
+                # else:
+                #     feature_dict[f'{col}_kurt'] = 0
                 
                 feature_dict[f'{col}_q25'] = np.percentile(col_data, 25)
                 feature_dict[f'{col}_q75'] = np.percentile(col_data, 75)
@@ -1104,7 +1108,8 @@ def _process_timestamp_with_multi_offset_precompute(args):
         # norm_return = norm(t_future_price / t_price, window = 200, clip = 6)
         # log_return = np.log(t_future_price / t_price)
 
-        # return_f = t_future_price / t_price
+        return_f = np.log(t_future_price / t_price)
+        # t_future_price / t_price
         return_p = t_future_price / t_price
 
 
@@ -1113,7 +1118,7 @@ def _process_timestamp_with_multi_offset_precompute(args):
             't_price': t_price,
             't_future_price': t_future_price,
             'return_p' : return_p,
-            # 'return_f': return_f,
+            'return_f': return_f,
             **feature_dict
         }
         
@@ -1391,8 +1396,13 @@ def data_prepare_coarse_grain_rolling(
     
     # 使用与 rolling_w 一致的 window，确保后续 inverse_norm 能正确匹配
     norm_window = rolling_w  # 使用配置的 rolling_w
+
+    #  return_f = np.log(t_future_price / t_price)
+    #  
+
+    # df_samples['ret_rolling_zscore'] = norm_ret(df_samples['return_f'].values, window=norm_window)
     df_samples['ret_rolling_zscore'] = norm(df_samples['return_p'].values, window=norm_window, clip=6)
-    df_samples['return_f'] = df_samples['ret_rolling_zscore']
+    # df_samples['return_f'] = df_samples['ret_rolling_zscore']
     
     print(f"✓ 使用 norm(window={norm_window}) 进行标准化")
     # df_samples['ret_rolling_zscore'] = norm(df_samples['return_f'].values, window = 200, clip = 6)
@@ -1409,7 +1419,7 @@ def data_prepare_coarse_grain_rolling(
                 (df_samples.index <= pd.to_datetime(end_date_test))
     
     # 提取特征列
-    feature_cols = [c for c in df_samples.columns if c not in ['t_price', 't_future_price', 'return_f', 'ret_rolling_zscore']]
+    feature_cols = [c for c in df_samples.columns if c not in ['t_price', 't_future_price', 'return_f', 'ret_rolling_zscore', 'return_p']]
     
     X_all = df_samples[feature_cols].fillna(0)
     X_train = X_all[train_mask]
@@ -1462,307 +1472,307 @@ def data_prepare_coarse_grain_rolling(
             df_samples.index, ohlc_aligned, y_p_train_origin, y_p_test_origin)
 
 
-def data_prepare_micro(sym: str, freq: str,
-                       start_date_train: str, end_date_train: str,
-                       start_date_test: str, end_date_test: str,
-                       y_train_ret_period: int = 1, rolling_w: int = 2000,
-                       output_format: str = 'ndarry', data_dir: str = '',
-                       read_frequency: str = '', timeframe: str = '',
-                       use_feature_extractors: bool = False,
-                       trades_dir: str = '',
-                       bar_builder: str = 'time',
-                       dollar_threshold: float = 1e6,
-                       feature_window_bars: int = 10,
-                       trades_load_mode: str = 'auto',
-                       prefer_trades_feather: bool = True,
-                       daily_data_template: str = '',
-                       monthly_data_template: str = '',
-                       active_family: str = '',
-                       feature_family_include: list = None,
-                       feature_family_exclude: list = None,
-                       file_path: Optional[str] = None,
-                       kline_file_path: Optional[str] = None):
-    """
-    微结构版数据准备：
+# def data_prepare_micro(sym: str, freq: str,
+#                        start_date_train: str, end_date_train: str,
+#                        start_date_test: str, end_date_test: str,
+#                        y_train_ret_period: int = 1, rolling_w: int = 2000,
+#                        output_format: str = 'ndarry', data_dir: str = '',
+#                        read_frequency: str = '', timeframe: str = '',
+#                        use_feature_extractors: bool = False,
+#                        trades_dir: str = '',
+#                        bar_builder: str = 'time',
+#                        dollar_threshold: float = 1e6,
+#                        feature_window_bars: int = 10,
+#                        trades_load_mode: str = 'auto',
+#                        prefer_trades_feather: bool = True,
+#                        daily_data_template: str = '',
+#                        monthly_data_template: str = '',
+#                        active_family: str = '',
+#                        feature_family_include: list = None,
+#                        feature_family_exclude: list = None,
+#                        file_path: Optional[str] = None,
+#                        kline_file_path: Optional[str] = None):
+#     """
+#     微结构版数据准备：
     
-    数据流程：
-    1. 读取 tick 级别交易数据（trades）
-    2. 从 trades 构建 bars（TimeBar 或 DollarBar）得到 OHLCV
-    3. 从 bars 的 OHLCV 生成标签（return_f）
-    4. 提取微观结构特征（基于 trades 和 bars）
+#     数据流程：
+#     1. 读取 tick 级别交易数据（trades）
+#     2. 从 trades 构建 bars（TimeBar 或 DollarBar）得到 OHLCV
+#     3. 从 bars 的 OHLCV 生成标签（return_f）
+#     4. 提取微观结构特征（基于 trades 和 bars）
     
-    参数说明：
-    - file_path: tick交易数据文件路径（优先级最高）
-    - kline_file_path: K线数据文件路径（用于标签生成的备用方案，当无tick数据时）
-    - daily_data_template/monthly_data_template: tick数据模板路径
+#     参数说明：
+#     - file_path: tick交易数据文件路径（优先级最高）
+#     - kline_file_path: K线数据文件路径（用于标签生成的备用方案，当无tick数据时）
+#     - daily_data_template/monthly_data_template: tick数据模板路径
     
-    返回签名保持与 data_prepare 完全一致，便于 GPAnalyzer 直接替换使用
-    """
+#     返回签名保持与 data_prepare 完全一致，便于 GPAnalyzer 直接替换使用
+#     """
     
-    # ========== 第一步：读取 Tick 交易数据 ==========
-    trades_df = None
+#     # ========== 第一步：读取 Tick 交易数据 ==========
+#     trades_df = None
     
-    # 优先级1: 直接指定的 tick 文件路径
-    if file_path:
-        print(f"\n{'='*60}")
-        print(f"从指定路径读取 Tick 数据: {file_path}")
-        print(f"{'='*60}\n")
-        trades_df = _read_tick_data_file(file_path)
+#     # 优先级1: 直接指定的 tick 文件路径
+#     if file_path:
+#         print(f"\n{'='*60}")
+#         print(f"从指定路径读取 Tick 数据: {file_path}")
+#         print(f"{'='*60}\n")
+#         trades_df = _read_tick_data_file(file_path)
     
-    # 优先级2: 使用 TradingPipeline 从模板读取
-    elif daily_data_template or monthly_data_template:
-        try:
-            tp_config = {
-                'data': {
-                    'load_mode': trades_load_mode or 'auto',
-                    'prefer_feather': bool(prefer_trades_feather),
-                }
-            }
-            tp = TradingPipeline(tp_config)
+#     # 优先级2: 使用 TradingPipeline 从模板读取
+#     elif daily_data_template or monthly_data_template:
+#         try:
+#             tp_config = {
+#                 'data': {
+#                     'load_mode': trades_load_mode or 'auto',
+#                     'prefer_feather': bool(prefer_trades_feather),
+#                 }
+#             }
+#             tp = TradingPipeline(tp_config)
             
-            # 规范化日期为 YYYY-MM-DD
-            def _normalize_date(s: str) -> str:
-                if len(str(s)) == 7 and '-' in s:  # 'YYYY-MM'
-                    return f"{s}-01"
-                return str(s)
+#             # 规范化日期为 YYYY-MM-DD
+#             def _normalize_date(s: str) -> str:
+#                 if len(str(s)) == 7 and '-' in s:  # 'YYYY-MM'
+#                     return f"{s}-01"
+#                 return str(s)
             
-            start_norm = _normalize_date(start_date_train)
-            end_norm = _normalize_date(end_date_test)
+#             start_norm = _normalize_date(start_date_train)
+#             end_norm = _normalize_date(end_date_test)
             
-            trades_df = tp.load_data(
-                trades_data=None,
-                date_range=(start_norm, end_norm),
-                daily_data_template=daily_data_template if daily_data_template else None,
-                monthly_data_template=monthly_data_template if monthly_data_template else None,
-            )
-            print(f"✓ 成功从模板读取 {len(trades_df):,} 条 Tick 数据")
-        except Exception as e:
-            print(f"⚠️  从模板读取 Tick 数据失败: {e}")
+#             trades_df = tp.load_data(
+#                 trades_data=None,
+#                 date_range=(start_norm, end_norm),
+#                 daily_data_template=daily_data_template if daily_data_template else None,
+#                 monthly_data_template=monthly_data_template if monthly_data_template else None,
+#             )
+#             print(f"✓ 成功从模板读取 {len(trades_df):,} 条 Tick 数据")
+#         except Exception as e:
+#             print(f"⚠️  从模板读取 Tick 数据失败: {e}")
     
-    # 如果没有 tick 数据，回退到 K线数据
-    if trades_df is None or trades_df.empty:
-        print(f"\n{'='*60}")
-        print("⚠️  未找到 Tick 数据，回退到 K线数据模式")
-        print(f"{'='*60}\n")
+#     # 如果没有 tick 数据，回退到 K线数据
+#     if trades_df is None or trades_df.empty:
+#         print(f"\n{'='*60}")
+#         print("⚠️  未找到 Tick 数据，回退到 K线数据模式")
+#         print(f"{'='*60}\n")
         
-        # 从 K线数据读取
-        z_raw = data_load_v2(sym, data_dir=data_dir, start_date=start_date_train, end_date=end_date_test,
-                            timeframe=timeframe, read_frequency=read_frequency, file_path=kline_file_path)
-        z_raw.index = pd.to_datetime(z_raw.index)
-        z_raw = z_raw[(z_raw.index >= pd.to_datetime(start_date_train)) & (z_raw.index <= pd.to_datetime(end_date_test))]
-        ohlcva_df = resample(z_raw, freq)
-        bars = None  # 标记没有构建 bars
-    else:
-        # ========== 第二步：从 Tick 数据构建 Bars ==========
-        print(f"\n{'='*60}")
-        print(f"从 Tick 数据构建 Bars (builder={bar_builder}, freq={freq})")
-        print(f"{'='*60}\n")
+#         # 从 K线数据读取
+#         z_raw = data_load_v2(sym, data_dir=data_dir, start_date=start_date_train, end_date=end_date_test,
+#                             timeframe=timeframe, read_frequency=read_frequency, file_path=kline_file_path)
+#         z_raw.index = pd.to_datetime(z_raw.index)
+#         z_raw = z_raw[(z_raw.index >= pd.to_datetime(start_date_train)) & (z_raw.index <= pd.to_datetime(end_date_test))]
+#         ohlcva_df = resample(z_raw, freq)
+#         bars = None  # 标记没有构建 bars
+#     else:
+#         # ========== 第二步：从 Tick 数据构建 Bars ==========
+#         print(f"\n{'='*60}")
+#         print(f"从 Tick 数据构建 Bars (builder={bar_builder}, freq={freq})")
+#         print(f"{'='*60}\n")
         
-        if str(bar_builder).lower() == 'dollar':
-            db = DollarBarBuilder(dollar_threshold=float(dollar_threshold))
-            bars = db.process(trades_df)
-            print(f"✓ 构建了 {len(bars)} 个 Dollar Bars (threshold={dollar_threshold:,.0f})")
-        else:
-            try:
-                tb = TimeBarBuilder(freq=freq)
-                bars = tb.process(trades_df)
-            except Exception as e:
-                print(f"⚠️  构建 Time Bars 失败: {e}")
-            print(f"✓ 构建了 {len(bars)} 个 Time Bars (freq={freq})")
+#         if str(bar_builder).lower() == 'dollar':
+#             db = DollarBarBuilder(dollar_threshold=float(dollar_threshold))
+#             bars = db.process(trades_df)
+#             print(f"✓ 构建了 {len(bars)} 个 Dollar Bars (threshold={dollar_threshold:,.0f})")
+#         else:
+#             try:
+#                 tb = TimeBarBuilder(freq=freq)
+#                 bars = tb.process(trades_df)
+#             except Exception as e:
+#                 print(f"⚠️  构建 Time Bars 失败: {e}")
+#             print(f"✓ 构建了 {len(bars)} 个 Time Bars (freq={freq})")
         
-        # 过滤时间范围
-        # bars = bars[(pd.to_datetime(bars['end_time']) >= pd.to_datetime(start_date_train)) &
-        #             (pd.to_datetime(bars['end_time']) <= pd.to_datetime(end_date_test))]
+#         # 过滤时间范围
+#         # bars = bars[(pd.to_datetime(bars['end_time']) >= pd.to_datetime(start_date_train)) &
+#         #             (pd.to_datetime(bars['end_time']) <= pd.to_datetime(end_date_test))]
         
-        # 设置时间索引
-        bars.index = pd.to_datetime(bars['end_time'])
-        ohlcva_df = None  # 标记使用 bars
+#         # 设置时间索引
+#         bars.index = pd.to_datetime(bars['end_time'])
+#         ohlcva_df = None  # 标记使用 bars
         
-        print(f"✓ 构建了 {len(bars)} 个 Bars")
-        print(f"时间范围: {bars.index.min()} 至 {bars.index.max()}\n")
+#         print(f"✓ 构建了 {len(bars)} 个 Bars")
+#         print(f"时间范围: {bars.index.min()} 至 {bars.index.max()}\n")
 
-    # ========== 第三步：统一数据接口（bars 或 ohlcva_df）==========
-    # 如果有 bars，直接使用 bars；否则使用 ohlcva_df（K线回退模式）
-    if bars is not None:
-        data_df = bars
-        close = data_df['close'].astype(float)
-    else:
-        data_df = ohlcva_df
-        close = data_df['c'].astype(float)
+#     # ========== 第三步：统一数据接口（bars 或 ohlcva_df）==========
+#     # 如果有 bars，直接使用 bars；否则使用 ohlcva_df（K线回退模式）
+#     if bars is not None:
+#         data_df = bars
+#         close = data_df['close'].astype(float)
+#     else:
+#         data_df = ohlcva_df
+#         close = data_df['c'].astype(float)
     
-    eps = 1e-12
+#     eps = 1e-12
 
-    # 家族意图解析（控制“只计算启用家族”）
-    def _to_list(v):
-        if v is None:
-            return []
-        return v if isinstance(v, list) else [v]
+#     # 家族意图解析（控制“只计算启用家族”）
+#     def _to_list(v):
+#         if v is None:
+#             return []
+#         return v if isinstance(v, list) else [v]
 
-    include_keys = _to_list(feature_family_include)
-    exclude_keys = _to_list(feature_family_exclude)
+#     include_keys = _to_list(feature_family_include)
+#     exclude_keys = _to_list(feature_family_exclude)
 
-    fam = str(active_family).strip().lower() if isinstance(active_family, str) else ''
-    family_map = {
-        'momentum': ['bar_logret', 'bar_abs_logret', 'micro_dp_short', 'micro_dp_zscore'],
-        'liquidity': ['amihud', 'kyle', 'hasbrouck', 'cs_spread', 'impact_roll', 'bar_amihud'],
-        'impact': ['amihud', 'kyle', 'hasbrouck', 'impact_'],
-    }
+#     fam = str(active_family).strip().lower() if isinstance(active_family, str) else ''
+#     family_map = {
+#         'momentum': ['bar_logret', 'bar_abs_logret', 'micro_dp_short', 'micro_dp_zscore'],
+#         'liquidity': ['amihud', 'kyle', 'hasbrouck', 'cs_spread', 'impact_roll', 'bar_amihud'],
+#         'impact': ['amihud', 'kyle', 'hasbrouck', 'impact_'],
+#     }
 
-    enabled_families: set = set()
-    if fam in family_map:
-        enabled_families.add(fam)
-    elif include_keys:
-        for fam_name, keys in family_map.items():
-            if any(any(k in key or key in k for key in keys) for k in include_keys):
-                enabled_families.add(fam_name)
+#     enabled_families: set = set()
+#     if fam in family_map:
+#         enabled_families.add(fam)
+#     elif include_keys:
+#         for fam_name, keys in family_map.items():
+#             if any(any(k in key or key in k for key in keys) for k in include_keys):
+#                 enabled_families.add(fam_name)
 
-    # 微结构代理特征（bar级）- 暂时为空DataFrame，后续由特征提取器填充
-    f = pd.DataFrame(index=data_df.index)
+#     # 微结构代理特征（bar级）- 暂时为空DataFrame，后续由特征提取器填充
+#     f = pd.DataFrame(index=data_df.index)
 
-    # ========== 第四步：提取微观结构特征（如果有 tick 数据和 bars）==========
-    extracted_df = None
-    if use_feature_extractors and trades_df is not None and bars is not None and not bars.empty:
-        print(f"\n{'='*60}")
-        print("开始提取微观结构特征")
-        print(f"{'='*60}\n")
+#     # ========== 第四步：提取微观结构特征（如果有 tick 数据和 bars）==========
+#     extracted_df = None
+#     if use_feature_extractors and trades_df is not None and bars is not None and not bars.empty:
+#         print(f"\n{'='*60}")
+#         print("开始提取微观结构特征")
+#         print(f"{'='*60}\n")
         
-        try:
-            # 构建交易上下文
-            tp = TradesProcessor()
-            ctx = tp.build_context(trades_df)
+#         try:
+#             # 构建交易上下文
+#             tp = TradesProcessor()
+#             ctx = tp.build_context(trades_df)
             
-            # 以 trading_pipeline 的窗口方式提取：对每个目标bar i，用 [i-feature_window_bars, i-1] 作为特征窗口
-            bars = bars.reset_index(drop=True)
-            bars['end_time'] = pd.to_datetime(bars['end_time'])
+#             # 以 trading_pipeline 的窗口方式提取：对每个目标bar i，用 [i-feature_window_bars, i-1] 作为特征窗口
+#             bars = bars.reset_index(drop=True)
+#             bars['end_time'] = pd.to_datetime(bars['end_time'])
             
-            # 构造仅启用家族的提取器配置
-            extractor_cfg: Dict[str, Any] = {}
-            if enabled_families:
-                # 先全部禁用，再按需启用
-                for k in ['basic','volatility','momentum','orderflow','impact','tail','path_shape','bucketed_flow']:
-                    extractor_cfg[k] = {'enabled': False}
-                for fam_name in enabled_families:
-                    if fam_name in extractor_cfg:
-                        extractor_cfg[fam_name] = {'enabled': True}
+#             # 构造仅启用家族的提取器配置
+#             extractor_cfg: Dict[str, Any] = {}
+#             if enabled_families:
+#                 # 先全部禁用，再按需启用
+#                 for k in ['basic','volatility','momentum','orderflow','impact','tail','path_shape','bucketed_flow']:
+#                     extractor_cfg[k] = {'enabled': False}
+#                 for fam_name in enabled_families:
+#                     if fam_name in extractor_cfg:
+#                         extractor_cfg[fam_name] = {'enabled': True}
             
-            extractor = MicrostructureFeatureExtractor(extractor_cfg if extractor_cfg else None)
+#             extractor = MicrostructureFeatureExtractor(extractor_cfg if extractor_cfg else None)
             
-            feat_rows = []
-            feat_index = []
-            total_bars = len(bars)
-            print(f"开始逐 bar 提取特征，共 {total_bars} 个 bars...")
+#             feat_rows = []
+#             feat_index = []
+#             total_bars = len(bars)
+#             print(f"开始逐 bar 提取特征，共 {total_bars} 个 bars...")
             
-            for i in range(total_bars):
-                if i % 100 == 0 and i > 0:
-                    print(f"  进度: {i}/{total_bars} ({i/total_bars*100:.1f}%)")
+#             for i in range(total_bars):
+#                 if i % 100 == 0 and i > 0:
+#                     print(f"  进度: {i}/{total_bars} ({i/total_bars*100:.1f}%)")
                 
-                start_idx = i - int(feature_window_bars)
-                end_idx = i - 1
-                if start_idx < 0 or end_idx < 0 or end_idx < start_idx:
-                    continue
+#                 start_idx = i - int(feature_window_bars)
+#                 end_idx = i - 1
+#                 if start_idx < 0 or end_idx < 0 or end_idx < start_idx:
+#                     continue
                 
-                st = pd.to_datetime(bars.loc[start_idx, 'start_time'])
-                et = pd.to_datetime(bars.loc[end_idx, 'end_time'])
+#                 st = pd.to_datetime(bars.loc[start_idx, 'start_time'])
+#                 et = pd.to_datetime(bars.loc[end_idx, 'end_time'])
                 
-                try:
-                    feats = extractor.extract_from_context(
-                        ctx=ctx,
-                        start_ts=st,
-                        end_ts=et,
-                        bars=bars,
-                        bar_window_start_idx=start_idx,
-                        bar_window_end_idx=end_idx,
-                    )
-                except Exception:
-                    feats = {}
+#                 try:
+#                     feats = extractor.extract_from_context(
+#                         ctx=ctx,
+#                         start_ts=st,
+#                         end_ts=et,
+#                         bars=bars,
+#                         bar_window_start_idx=start_idx,
+#                         bar_window_end_idx=end_idx,
+#                     )
+#                 except Exception:
+#                     feats = {}
                 
-                feat_rows.append(feats)
-                feat_index.append(pd.to_datetime(bars.loc[i, 'end_time']))
+#                 feat_rows.append(feats)
+#                 feat_index.append(pd.to_datetime(bars.loc[i, 'end_time']))
             
-            print(f"✓ 特征提取完成，共提取 {len(feat_rows)} 个样本")
+#             print(f"✓ 特征提取完成，共提取 {len(feat_rows)} 个样本")
             
-            extracted_df = pd.DataFrame(feat_rows, index=pd.to_datetime(feat_index))
+#             extracted_df = pd.DataFrame(feat_rows, index=pd.to_datetime(feat_index))
             
-            # 缺失与极值处理
-            print(f"处理缺失值和极值...")
-            extracted_df = extracted_df.replace([np.inf, -np.inf], np.nan)
-            try:
-                lower2 = extracted_df.quantile(0.01)
-                upper2 = extracted_df.quantile(0.99)
-                extracted_df = extracted_df.clip(lower=lower2, upper=upper2, axis=1)
-            except Exception:
-                pass
-            extracted_df = extracted_df.fillna(0.0)
-            print(f"✓ 提取了 {len(extracted_df.columns)} 个微观结构特征\n")
+#             # 缺失与极值处理
+#             print(f"处理缺失值和极值...")
+#             extracted_df = extracted_df.replace([np.inf, -np.inf], np.nan)
+#             try:
+#                 lower2 = extracted_df.quantile(0.01)
+#                 upper2 = extracted_df.quantile(0.99)
+#                 extracted_df = extracted_df.clip(lower=lower2, upper=upper2, axis=1)
+#             except Exception:
+#                 pass
+#             extracted_df = extracted_df.fillna(0.0)
+#             print(f"✓ 提取了 {len(extracted_df.columns)} 个微观结构特征\n")
             
-        except Exception as e:
-            print(f"⚠️  基于 features/ 特征提取失败，将仅使用 bar 级代理特征：{e}\n")
+#         except Exception as e:
+#             print(f"⚠️  基于 features/ 特征提取失败，将仅使用 bar 级代理特征：{e}\n")
 
-    # ========== 第五步：生成标签 ==========
-    z_lab = pd.DataFrame(index=data_df.index)
-    z_lab['return_f'] = np.log(close).diff(y_train_ret_period).shift(-y_train_ret_period)
-    z_lab['return_f'] = z_lab['return_f'].fillna(0)
+#     # ========== 第五步：生成标签 ==========
+#     z_lab = pd.DataFrame(index=data_df.index)
+#     z_lab['return_f'] = np.log(close).diff(y_train_ret_period).shift(-y_train_ret_period)
+#     z_lab['return_f'] = z_lab['return_f'].fillna(0)
 
-    def _norm_ret(x, window=rolling_w):
-        x = np.log1p(np.asarray(x))
-        x = np.nan_to_num(x)
-        std = pd.Series(x).rolling(window=window, min_periods=1).std().replace(0, np.nan)
-        val = pd.Series(x) / std
-        return np.nan_to_num(val).values
+#     def _norm_ret(x, window=rolling_w):
+#         x = np.log1p(np.asarray(x))
+#         x = np.nan_to_num(x)
+#         std = pd.Series(x).rolling(window=window, min_periods=1).std().replace(0, np.nan)
+#         val = pd.Series(x) / std
+#         return np.nan_to_num(val).values
 
-    z_lab['ret_rolling_zscore'] = _norm_ret(z_lab['return_f'])
+#     z_lab['ret_rolling_zscore'] = _norm_ret(z_lab['return_f'])
 
-    # ========== 第六步：切分训练集和测试集 ==========
-    # 根据数据类型选择列名
-    if bars is not None:
-        open_col, close_col = 'open', 'close'
-    else:
-        open_col, close_col = 'o', 'c'
+#     # ========== 第六步：切分训练集和测试集 ==========
+#     # 根据数据类型选择列名
+#     if bars is not None:
+#         open_col, close_col = 'open', 'close'
+#     else:
+#         open_col, close_col = 'o', 'c'
     
-    open_train = data_df[open_col][(data_df[open_col].index >= pd.to_datetime(start_date_train)) & (data_df[open_col].index < pd.to_datetime(end_date_train))]
-    open_test = data_df[open_col][(data_df[open_col].index >= pd.to_datetime(start_date_test)) & (data_df[open_col].index <= pd.to_datetime(end_date_test))]
-    close_train = data_df[close_col][(data_df[close_col].index >= pd.to_datetime(start_date_train)) & (data_df[close_col].index < pd.to_datetime(end_date_train))]
-    close_test = data_df[close_col][(data_df[close_col].index >= pd.to_datetime(start_date_test)) & (data_df[close_col].index <= pd.to_datetime(end_date_test))]
+#     open_train = data_df[open_col][(data_df[open_col].index >= pd.to_datetime(start_date_train)) & (data_df[open_col].index < pd.to_datetime(end_date_train))]
+#     open_test = data_df[open_col][(data_df[open_col].index >= pd.to_datetime(start_date_test)) & (data_df[open_col].index <= pd.to_datetime(end_date_test))]
+#     close_train = data_df[close_col][(data_df[close_col].index >= pd.to_datetime(start_date_train)) & (data_df[close_col].index < pd.to_datetime(end_date_train))]
+#     close_test = data_df[close_col][(data_df[close_col].index >= pd.to_datetime(start_date_test)) & (data_df[close_col].index <= pd.to_datetime(end_date_test))]
 
-    # 切分 train/test
-    z_train = pd.concat([f, z_lab], axis=1)
-    z_test = z_train.copy()
-    z_train = z_train[(z_train.index >= pd.to_datetime(start_date_train)) & (z_train.index < pd.to_datetime(end_date_train))]
-    z_test = z_test[(z_test.index >= pd.to_datetime(start_date_test)) & (z_test.index <= pd.to_datetime(end_date_test))]
+#     # 切分 train/test
+#     z_train = pd.concat([f, z_lab], axis=1)
+#     z_test = z_train.copy()
+#     z_train = z_train[(z_train.index >= pd.to_datetime(start_date_train)) & (z_train.index < pd.to_datetime(end_date_train))]
+#     z_test = z_test[(z_test.index >= pd.to_datetime(start_date_test)) & (z_test.index <= pd.to_datetime(end_date_test))]
 
-    # y/ret
-    y_dataset_train = z_train['ret_rolling_zscore'].values
-    y_dataset_test = z_test['ret_rolling_zscore'].values
-    ret_dataset_train = z_train['return_f'].values
-    ret_dataset_test = z_test['return_f'].values
+#     # y/ret
+#     y_dataset_train = z_train['ret_rolling_zscore'].values
+#     y_dataset_test = z_test['ret_rolling_zscore'].values
+#     ret_dataset_train = z_train['return_f'].values
+#     ret_dataset_test = z_test['return_f'].values
 
-    # 删除包含未来信息的列
-    z_train = z_train.drop(['return_f', 'ret_rolling_zscore'], axis=1)
-    z_test = z_test.drop(['return_f', 'ret_rolling_zscore'], axis=1)
-    f_all = pd.concat([f], axis=1)
+#     # 删除包含未来信息的列
+#     z_train = z_train.drop(['return_f', 'ret_rolling_zscore'], axis=1)
+#     z_test = z_test.drop(['return_f', 'ret_rolling_zscore'], axis=1)
+#     f_all = pd.concat([f], axis=1)
 
-    # X_all/X_train/X_test
-    if output_format == 'ndarry':
-        X_all = np.where(np.isnan(f_all), 0, f_all)
-        X_dataset_train = np.where(np.isnan(z_train), 0, z_train)
-        X_dataset_test = np.where(np.isnan(z_test), 0, z_test)
-    elif output_format == 'dataframe':
-        X_all = f_all.fillna(0)
-        X_dataset_train = z_train.fillna(0)
-        X_dataset_test = z_test.fillna(0)
-    else:
-        print('output_format of data_prepare_micro should be "ndarry" or "dataframe"')
-        exit(1)
+#     # X_all/X_train/X_test
+#     if output_format == 'ndarry':
+#         X_all = np.where(np.isnan(f_all), 0, f_all)
+#         X_dataset_train = np.where(np.isnan(z_train), 0, z_train)
+#         X_dataset_test = np.where(np.isnan(z_test), 0, z_test)
+#     elif output_format == 'dataframe':
+#         X_all = f_all.fillna(0)
+#         X_dataset_train = z_train.fillna(0)
+#         X_dataset_test = z_test.fillna(0)
+#     else:
+#         print('output_format of data_prepare_micro should be "ndarry" or "dataframe"')
+#         exit(1)
 
-    feature_names = z_train.columns
+#     feature_names = z_train.columns
 
-    # 为了兼容性，如果使用 bars，需要创建 ohlcva_df 格式的返回值
-    if bars is not None:
-        # 创建兼容格式的 ohlcva_df
-        ohlcva_df = data_df[['open', 'high', 'low', 'close', 'volume', 'dollar_value', 'trades']].copy()
-        ohlcva_df.columns = ['o', 'h', 'l', 'c', 'vol', 'vol_ccy', 'trades']
-        for col in ['oi', 'oi_ccy', 'toptrader_count_lsr', 'toptrader_oi_lsr', 'count_lsr', 'taker_vol_lsr']:
-            ohlcva_df[col] = 0
+#     # 为了兼容性，如果使用 bars，需要创建 ohlcva_df 格式的返回值
+#     if bars is not None:
+#         # 创建兼容格式的 ohlcva_df
+#         ohlcva_df = data_df[['open', 'high', 'low', 'close', 'volume', 'dollar_value', 'trades']].copy()
+#         ohlcva_df.columns = ['o', 'h', 'l', 'c', 'vol', 'vol_ccy', 'trades']
+#         for col in ['oi', 'oi_ccy', 'toptrader_count_lsr', 'toptrader_oi_lsr', 'count_lsr', 'taker_vol_lsr']:
+#             ohlcva_df[col] = 0
 
     return (X_all, X_dataset_train, y_dataset_train, ret_dataset_train,
             X_dataset_test, y_dataset_test, ret_dataset_test,

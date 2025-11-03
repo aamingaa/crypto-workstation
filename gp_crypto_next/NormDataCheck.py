@@ -43,7 +43,7 @@ NormDataCheck模块使用说明
 
 """
 
-def norm(data, window = 200, clip=6):
+def norm(data, window = 500, clip=6):
     """
     使用numpy的random模块
     """
