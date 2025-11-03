@@ -27,18 +27,28 @@ bash setup_env.sh
 
 ### 手动安装
 
-如果你已经有 Python 3.8：
+如果你已经有 Python 3.8 或更高版本：
 
 ```bash
-# Ubuntu/Debian - 确保有 Python 3.8
+# Ubuntu/Debian - 安装 venv 模块（如果缺少）
 sudo apt-get update
+# 如果系统是 Python 3.12
+sudo apt-get install -y python3.12-venv python3.12-dev
+# 或者安装 Python 3.8
 sudo apt-get install -y python3.8 python3.8-venv python3.8-dev python3-pip
 
-# CentOS/RHEL - 确保有 Python 3.8
+# CentOS/RHEL - 安装开发工具（如果缺少）
+# 如果系统 Python >= 3.8
+sudo yum install -y python3-devel
+# 或者安装 Python 3.8
 sudo yum install -y python38 python38-pip python38-devel
 
-# 创建虚拟环境
+# 创建虚拟环境（使用系统 Python 版本）
+python3 -m venv venv
+# 或使用 Python 3.8
 python3.8 -m venv venv
+
+# 激活虚拟环境
 source venv/bin/activate
 
 # 安装依赖
@@ -49,15 +59,19 @@ pip install -r requirements.txt
 
 自动化安装脚本 (`setup_env.sh`) 会自动完成以下步骤：
 
-1. ✅ 检测系统是否有 Python 3.8，如没有则自动安装
-2. ✅ 支持 Ubuntu/Debian (apt) 和 CentOS/RHEL (yum)
-3. ✅ 创建 Python 3.8 虚拟环境 (venv)
-4. ✅ 激活虚拟环境
-5. ✅ 升级 pip 到最新版本
-6. ✅ 可选使用清华镜像源加速下载
-7. ✅ 安装所有 Python 依赖包
-8. ✅ 验证关键库是否安装成功
-9. ✅ 显示完整的环境信息
+1. ✅ **智能检测** Python 版本（支持 3.8、3.9、3.10、3.11、3.12 等）
+2. ✅ **灵活处理**：
+   - 如果有 Python >= 3.8 但缺少 venv → 只安装对应版本的 venv 模块
+   - 如果 Python 版本 < 3.8 → 安装 Python 3.8
+   - 如果完全没有 Python → 安装 Python 3.8
+3. ✅ 支持 Ubuntu/Debian (apt) 和 CentOS/RHEL (yum)
+4. ✅ 创建虚拟环境（使用检测到的 Python 版本）
+5. ✅ 激活虚拟环境
+6. ✅ 升级 pip 到最新版本
+7. ✅ 可选使用清华镜像源加速下载
+8. ✅ 安装所有 Python 依赖包
+9. ✅ 验证关键库是否安装成功
+10. ✅ 显示完整的环境信息
 
 ## 🔧 TA-Lib 安装说明
 

@@ -242,16 +242,41 @@ if [ -z "$PYTHON_CMD" ]; then
 fi
 
 # 最终检查
-PYTHON_VERSION=$($PYTHON_CMD --version 2>&1 | awk '{print $2}')
-print_info "使用 Python 版本: $PYTHON_VERSION"
-print_info "Python 命令: $PYTHON_CMD"
-
-if ! $PYTHON_CMD -c "import sys; exit(0 if sys.version_info >= (3, 8) else 1)" 2>/dev/null; then
-    print_error "Python 版本不满足要求 (需要 >= 3.8)"
+if [ -z "$PYTHON_CMD" ]; then
+    print_error "未能确定可用的 Python 命令"
     exit 1
 fi
 
-print_success "Python 环境检查完成"
+# 获取 Python 版本信息
+PYTHON_VERSION=$($PYTHON_CMD --version 2>&1 | awk '{print $2}')
+MAJOR_MINOR=$($PYTHON_CMD -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "")
+
+print_info "使用 Python 版本: $PYTHON_VERSION"
+print_info "Python 命令: $PYTHON_CMD"
+
+# 检查 Python 版本（使用更详细的错误信息）
+VERSION_CHECK=$($PYTHON_CMD -c "import sys; print('OK' if sys.version_info >= (3, 8) else 'FAIL')" 2>&1)
+if [ "$VERSION_CHECK" != "OK" ]; then
+    print_error "Python 版本不满足要求 (需要 >= 3.8)"
+    print_error "当前版本: $PYTHON_VERSION"
+    print_error "版本检查返回: $VERSION_CHECK"
+    exit 1
+fi
+
+# 检查 venv 模块
+if ! $PYTHON_CMD -m venv --help &> /dev/null; then
+    print_error "venv 模块不可用"
+    print_info "请确保已安装 venv 模块："
+    if [ -n "$MAJOR_MINOR" ]; then
+        echo "  Ubuntu/Debian: sudo apt-get install -y python${MAJOR_MINOR}-venv"
+    else
+        echo "  Ubuntu/Debian: sudo apt-get install -y python3-venv"
+    fi
+    echo "  CentOS/RHEL: sudo yum install -y python3-devel"
+    exit 1
+fi
+
+print_success "Python 环境检查完成 ✓"
 
 # =============================================================================
 # 2. 创建虚拟环境
