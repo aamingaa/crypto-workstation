@@ -228,8 +228,9 @@ class GPAnalyzer:
             feature_names=feature_names,
             n_jobs=self.gp_settings.get('n_jobs', -1),
             corrcoef_threshold=self.gp_settings.get('corrcoef_threshold', 0.9),
-            random_state=random_state
-        )
+            random_state=random_state,
+            verbose=2
+            )
 
         ST_gplearn.fit(X, y)
         return ST_gplearn

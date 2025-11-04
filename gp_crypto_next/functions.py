@@ -15,7 +15,7 @@ from joblib import wrap_non_picklable_objects
 import talib
 from numpy.lib.stride_tricks import sliding_window_view
 import warnings
-from NormDataCheck import norm, inverse_norm
+#from NormDataCheck import norm, inverse_norm
 
 warnings.filterwarnings('ignore')
 
@@ -172,7 +172,7 @@ def norm_v2(x, rolling_window=2000): # 20230910 checked, 不再用L2 norm，恢�
     return np.nan_to_num(factor_value).flatten()
 
 
-def norm_log1p(x, rolling_window=2000):
+def norm(x, rolling_window=500):
     """
     先对称 log1p 压缩，再做滚动 z-score 标准化
     
