@@ -153,8 +153,8 @@ def _build_file_paths(sym: str, date_str: str, data_dir: str, timeframe: str = '
     
     # /Volumes/Ext-Disk/data/futures/um/monthly/klines/ETHUSDT/15m/2025/ETHUSDT-15m-2025-01.feather
     year = date_str.split('-')[0]
-    feather_path = os.path.join(f'{data_dir}/{year}', f"{file_base_name}.feather")
-    zip_path = os.path.join(f'{data_dir}/{year}', f"{file_base_name}.zip")
+    feather_path = os.path.join(f'{data_dir}', f"{file_base_name}.feather")
+    zip_path = os.path.join(f'{data_dir}', f"{file_base_name}.zip")
     
     return file_base_name, feather_path, zip_path
 

@@ -5,7 +5,7 @@ numpy>=1.24.0
 # 数据加密货币相关
 cryptofeed==2.3.0
 tardis-dev>=1.0.0
-binance>=1.0.0
+# binance>=1.0.0
 pytdx>=1.7.0
 
 # 机器学习和深度学习
@@ -24,7 +24,7 @@ matplotlib>=3.7.0
 plotly>=5.14.0
 seaborn>=0.12.0
 pyecharts>=2.0.0
-mplfinance>=0.12.0
+# mplfinance>=0.12.0
 
 # 数据存储和序列化
 tables>=3.8.0

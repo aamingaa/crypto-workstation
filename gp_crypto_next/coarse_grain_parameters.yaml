@@ -11,7 +11,8 @@ start_date_test: '2025-03-01'
 end_date_test: '2025-05-01'
 timeframe: '15m'
 # data_dir: '/Volumes/Ext-Disk/data/futures/um/monthly/klines/ETHUSDT/15m'
-data_dir: '/Users/aming/data/ETHUSDT/15m'
+# data_dir: '/Users/aming/data/ETHUSDT/15m'
+data_dir: '/root/binance-public-data/python/data/futures/um/monthly/klines/ETHUSDT/15m'
 read_frequency: 'monthly'
 # read_frequency: 'monthly'
 
@@ -41,7 +42,7 @@ gp_settings:
   tournament_size: 8
   const_range: null
   init_depth: [2, 5]
-  metric: 'rolling_rank_sic'  # 'avg_pic', 'avg_sic', 'sharp', 'calmar', 'sharpe_fixed_threshold', 'sharpe_std_threshold', rolling_rank_sic
+  metric: 'avg_sic'  # 'avg_pic', 'avg_sic', 'sharp', 'calmar', 'sharpe_fixed_threshold', 'sharpe_std_threshold', rolling_rank_sic
   parsimony_coefficient: 0.0005
   p_crossover: 0.8
   p_subtree_mutation: 0.02
