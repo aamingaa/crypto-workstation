@@ -1,5 +1,5 @@
 # rolling_window: 200   # 指定rolling_window窗口大小
-rolling_window: 500   # 指定rolling_window窗口大小
+rolling_window: 200   # 指定rolling_window窗口大小
 inverse_rolling_window: 200
 freq: 15m    # 指定数据频率（用于读取原始数据）
 

@@ -3,12 +3,13 @@ freq: 15m    # 指定数据频率
 
 sym: ETHUSDT    # 指定gplearn做训练的品种数据, 不支持截面上的多品种   btcusdt ethusdt bnbusdt solusdt
 y_train_ret_period: 5    # 指定在训练集上的y值是未来第几个bar的收益率差
-start_date_train: '2024-08'
+start_date_train: '2024-10'
 end_date_train: '2025-01'
-start_date_test: '2025-03'
-end_date_test: '2025-06'
+start_date_test: '2025-01'
+end_date_test: '2025-03'
 timeframe: '15m'
-data_dir: '/Volumes/Ext-Disk/data/futures/um/monthly/klines/ETHUSDT/15m'
+# data_dir: '/Volumes/Ext-Disk/data/futures/um/monthly/klines/ETHUSDT/15m'
+data_dir: '/Users/aming/data/ETHUSDT/15m'
 read_frequency: 'monthly'
 
 # ===== 可选：直接指定数据文件路径 =====

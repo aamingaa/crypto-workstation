@@ -344,8 +344,8 @@ def define_base_fields(include_categories: List[str] = None):
 
 
 def calculate_base_fields(data, base_fields, apply_norm=True, rolling_zscore_window=2000):
-    # for field, formula in tqdm(base_fields.items(), desc="Processing"):
-    for field, formula in base_fields.items():
+    for field, formula in tqdm(base_fields.items(), desc="Processing"):
+    # for field, formula in base_fields.items():
         if apply_norm:
             data[field] = norm1(formula(data), rolling_zscore_window)
         else:
@@ -428,11 +428,11 @@ def calculate_features_df_tail(input_df, rolling_zscore_window, include_categori
 
 
 class BaseFeature:
-    def __init__(self, init_ohlcva_df, include_categories: List[str] = None):
+    def __init__(self, init_ohlcva_df, include_categories: List[str] = None, rolling_zscore_window: int = 2000):
         # 将所有列转换为 double 类型
         init_ohlcva_df = init_ohlcva_df.astype(np.float64)
 
-        self.rolling_zscore_window: int = 2000
+        self.rolling_zscore_window = rolling_zscore_window
         # print('feature 定义')
         self.base_fields = define_base_fields(include_categories=include_categories)
         # print('init_feature 计算')

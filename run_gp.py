@@ -16,6 +16,7 @@ def main() -> None:
     # yaml_file_path = project_root / "gp_crypto_next" / "parameters.yaml"
 
     yaml_file_path = project_root / "gp_crypto_next" / "coarse_grain_parameters.yaml"
+    # yaml_file_path = project_root / "gp_crypto_next" / "parameters.yaml"
 
     analyzer = GPAnalyzer(str(yaml_file_path))
     analyzer.run()

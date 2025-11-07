@@ -1046,26 +1046,29 @@ def _process_timestamp_with_multi_offset_precompute(args):
         
         coarse_features_df = coarse_features_dict[offset]
         
+        window_coarse_features = coarse_features_df
+
         # 计算窗口范围
-        feature_window_start = t - feature_window_timedelta
-        feature_window_end = t
+        # feature_window_start = t - feature_window_timedelta
+        # feature_window_end = t
         
-        # 边界检查
-        if (feature_window_start < coarse_features_df.index.min() or 
-            feature_window_end > coarse_features_df.index.max() or
-            t + prediction_horizon_td >= z_raw.index.max()):
-            return None, False
+        # # 边界检查
+        # if (feature_window_start < coarse_features_df.index.min() or 
+        #     feature_window_end > coarse_features_df.index.max() or
+        #     t + prediction_horizon_td >= z_raw.index.max()):
+        #     return None, False
         
-        # ========== 关键：从选定组的预计算特征中选择窗口 ==========
-        window_coarse_features = coarse_features_df[
-            (coarse_features_df.index >= feature_window_start) & 
-            (coarse_features_df.index < feature_window_end)
-        ]
+        # # ========== 关键：从选定组的预计算特征中选择窗口 ==========
+        # window_coarse_features = coarse_features_df[
+        #     (coarse_features_df.index >= feature_window_start) & 
+        #     (coarse_features_df.index < feature_window_end)
+        # ]
         
-        # 检查是否有足够的桶
-        if len(window_coarse_features) < feature_lookback_bars * 0.5:
-            return None, False
+        # # 检查是否有足够的桶
+        # if len(window_coarse_features) < feature_lookback_bars * 0.5:
+        #     return None, False
         
+
         # ========== 对窗口内的粗粒度桶特征进行聚合统计 ==========
         feature_dict = {}
         
@@ -1078,27 +1081,27 @@ def _process_timestamp_with_multi_offset_precompute(args):
             col_data = window_coarse_features[col]
             n = len(col_data)
             
-            if n > 0:
-                # 使用 numpy 加速统计计算
-                feature_dict[f'{col}_mean'] = np.mean(col_data)
-                feature_dict[f'{col}_std'] = np.std(col_data)
-                feature_dict[f'{col}_max'] = np.max(col_data)
-                feature_dict[f'{col}_min'] = np.min(col_data)
-                feature_dict[f'{col}_last'] = col_data.iloc[-1]
-                feature_dict[f'{col}_median'] = np.median(col_data)
+            # if n > 0:
+            #     # 使用 numpy 加速统计计算
+            #     feature_dict[f'{col}_mean'] = np.mean(col_data)
+            #     feature_dict[f'{col}_std'] = np.std(col_data)
+            #     feature_dict[f'{col}_max'] = np.max(col_data)
+            #     feature_dict[f'{col}_min'] = np.min(col_data)
+            #     feature_dict[f'{col}_last'] = col_data.iloc[-1]
+            #     feature_dict[f'{col}_median'] = np.median(col_data)
                 
-                # if n > 2:
-                #     feature_dict[f'{col}_skew'] = col_data.skew()
-                # else:
-                #     feature_dict[f'{col}_skew'] = 0
+            #     # if n > 2:
+            #     #     feature_dict[f'{col}_skew'] = col_data.skew()
+            #     # else:
+            #     #     feature_dict[f'{col}_skew'] = 0
                     
-                # if n > 3:
-                #     feature_dict[f'{col}_kurt'] = col_data.kurtosis()
-                # else:
-                #     feature_dict[f'{col}_kurt'] = 0
+            #     # if n > 3:
+            #     #     feature_dict[f'{col}_kurt'] = col_data.kurtosis()
+            #     # else:
+            #     #     feature_dict[f'{col}_kurt'] = 0
                 
-                feature_dict[f'{col}_q25'] = np.percentile(col_data, 25)
-                feature_dict[f'{col}_q75'] = np.percentile(col_data, 75)
+            #     feature_dict[f'{col}_q25'] = np.percentile(col_data, 25)
+            #     feature_dict[f'{col}_q75'] = np.percentile(col_data, 75)
         
         # 计算标签
         t_price = z_raw.loc[t, 'c']
@@ -1199,9 +1202,13 @@ def data_prepare_coarse_grain_rolling(
     
     # 扩展数据范围以容纳特征窗口
     feature_window_timedelta = pd.Timedelta(coarse_grain_period) * feature_lookback_bars
-    extended_start = pd.to_datetime(start_date_train) - feature_window_timedelta - pd.Timedelta('1d')  # 多留1天buffer
+    # extended_start = pd.to_datetime(start_date_train) - feature_window_timedelta - pd.Timedelta('1d')  # 多留1天buffer
     
-    z_raw = z_raw[(z_raw.index >= extended_start) & (z_raw.index <= pd.to_datetime(end_date_test))]
+    # z_raw = z_raw[(z_raw.index >= extended_start) & (z_raw.index <= pd.to_datetime(end_date_test))]
+    
+    z_raw = z_raw[(z_raw.index >= pd.to_datetime(start_date_train)) 
+                  & (z_raw.index <= pd.to_datetime(end_date_test))]  # 只截取参数指定部分dataframe
+    
     print(f"读取原始数据: {len(z_raw)} 行，时间范围 {z_raw.index.min()} 至 {z_raw.index.max()}")
     
     # ========== 第二步：预计算粗粒度桶特征（可选优化） ==========
@@ -1247,7 +1254,7 @@ def data_prepare_coarse_grain_rolling(
             print(f"  - 计算BaseFeature...")
             
             # 计算特征
-            base_feature = originalFeature.BaseFeature(coarse_bars.copy(), include_categories = include_categories)
+            base_feature = originalFeature.BaseFeature(coarse_bars.copy(), include_categories = include_categories, rolling_zscore_window = rolling_w)
             features_df = base_feature.init_feature_df
             
             # 存储
