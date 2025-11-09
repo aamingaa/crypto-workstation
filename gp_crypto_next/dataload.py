@@ -1050,24 +1050,37 @@ def _process_timestamp_with_multi_offset_precompute_v2(args):
         feature_cols = [col for col in numeric_cols if col not in exclude_cols]
         
 
-        window_coarse_features = coarse_features_df[feature_cols]
+        window_coarse_features = coarse_features_df[feature_cols].copy()
         
-        # 计算标签
-        t_price = z_raw.loc[t, 'c']
-        t_future = t + prediction_horizon_td
-        t_future_price = z_raw.loc[t_future, 'c']
-    
-
-        return_f = np.log(t_future_price / t_price)
-        return_p = t_future_price / t_price
-
-        window_coarse_features['timestamp'] = t
-        window_coarse_features['t_price'] = t_price
-        window_coarse_features['t_future_price'] = t_future_price
+        # 计算标签 - 向量化计算每一行的return
+        # 获取每一行的时间戳（index）
+        row_timestamps = window_coarse_features.index
+        
+        # 向量化获取当前时刻的价格
+        t_prices = z_raw.loc[row_timestamps, 'c']
+        
+        # 向量化计算未来时刻
+        future_timestamps = row_timestamps + prediction_horizon_td
+        
+        # 向量化获取未来时刻的价格（使用reindex，越界的会自动返回nan）
+        # 注意：不使用loc，因为越界会报错；reindex会自动填充nan
+        t_future_prices = z_raw['c'].reindex(future_timestamps)
+        
+        # 向量化计算收益率（越界的会自动得到nan）
+        return_p = (t_future_prices.values / t_prices.values)
+        return_f = np.log(return_p)
+        
+        # 将计算结果赋值给DataFrame
+        window_coarse_features['t_price'] = t_prices.values
+        window_coarse_features['t_future_price'] = t_future_prices.values
         window_coarse_features['return_p'] = return_p
         window_coarse_features['feature_offset'] = offset_minutes
         window_coarse_features['return_f'] = return_f
         
+        # 优化：直接使用row_timestamps作为index，避免后续concat时的额外处理
+        # window_coarse_features的index已经是row_timestamps
+        
+        # print(f'window_coarse_features offset_minutes={offset_minutes}, len = {len(window_coarse_features)}')
         return window_coarse_features, True
         
     except Exception as e:
@@ -1429,9 +1442,23 @@ def data_prepare_coarse_grain_rolling(
         print(f"\n✓ 串行处理完成: 有效 {valid_count} 个，跳过 {skipped_count} 个")
     
     # ========== 第六步：构建DataFrame并处理 ==========
-    df_samples = pd.DataFrame(samples)
-    df_samples.set_index('timestamp', inplace=True)
-    df_samples.sort_index(inplace=True)
+    print(f"\n合并样本数据...")
+    
+    # 检查samples的类型，使用不同的合并策略
+    if len(samples) > 0 and isinstance(samples[0], pd.DataFrame):
+        # 优化路径：samples是DataFrame列表（来自_process_timestamp_with_multi_offset_precompute_v2）
+        # 使用pd.concat会比pd.DataFrame快很多
+        print(f"  使用pd.concat合并{len(samples)}个DataFrame...")
+        df_samples = pd.concat(samples, axis=0, ignore_index=False, copy=False)
+        df_samples.sort_index(inplace=True)
+    else:
+        # 传统路径：samples是dict列表（来自_process_single_timestamp）
+        print(f"  使用pd.DataFrame合并{len(samples)}个样本...")
+        df_samples = pd.DataFrame(samples)
+        df_samples.set_index('timestamp', inplace=True)
+        df_samples.sort_index(inplace=True)
+    
+    print(f"✓ 合并完成")
     
     print(f"样本时间范围: {df_samples.index.min()} 至 {df_samples.index.max()}")
     print(f"样本数量: {len(df_samples)}")
