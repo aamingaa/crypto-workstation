@@ -151,7 +151,7 @@ def _protected_inverse(x1):
         return np.where(np.abs(x1) > 0.001, 1. / x1, 0.)
 
 
-def norm(x, rolling_window=2000): # 20230910 checked, 不再用L2 norm，恢复到之前的zscore，然后这里需要做的是给他增加一个周期
+def norm(x, rolling_window=200): # 20230910 checked, 不再用L2 norm，恢复到之前的zscore，然后这里需要做的是给他增加一个周期
 
     # x = np.log1p(np.asarray(x)) # 原有写法factor_mean.values
     # arr = np.asarray(x)

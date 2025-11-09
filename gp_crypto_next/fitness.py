@@ -43,7 +43,8 @@ def calculate_annual_bars(freq: str) -> int:
 
 
 # freq 频率对应的参数
-rolling_w = 1000
+# rolling_w = 1000
+rolling_w = 200
 # freq = '30min'
 # freq = '1h'
 freq = '15min'

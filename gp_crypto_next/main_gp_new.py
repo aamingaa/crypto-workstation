@@ -227,11 +227,24 @@ class GPAnalyzer:
             p_point_replace=self.gp_settings.get('p_point_replace', 0.4),
             feature_names=feature_names,
             n_jobs=self.gp_settings.get('n_jobs', -1),
+            verbose=2,
             corrcoef_threshold=self.gp_settings.get('corrcoef_threshold', 0.9),
             random_state=random_state
         )
 
-        ST_gplearn.fit(X, y)
+        try:
+            ST_gplearn.fit(X, y)
+        except Exception as e:
+            import traceback
+            print(f"\n{'='*60}")
+            print(f"❌ Error fitting GP")
+            print(f"{'='*60}")
+            print(f"错误类型: {type(e).__name__}")
+            print(f"错误信息: {str(e)}")
+            print(f"\n详细堆栈跟踪:")
+            print(traceback.format_exc())
+            print(f"{'='*60}\n")
+            return None
         return ST_gplearn
 
 

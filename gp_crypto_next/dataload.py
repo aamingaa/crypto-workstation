@@ -1186,7 +1186,8 @@ def data_prepare_coarse_grain_rolling(
         use_parallel: bool = True,  # 是否使用并行处理
         n_jobs: int = -1,  # 并行进程数，-1表示使用所有CPU核心
         use_fine_grain_precompute: bool = True,  # 是否使用细粒度预计算优化
-        include_categories: List[str] = None
+        include_categories: List[str] = None,
+        remove_warmup_rows: bool = False  # 是否删除rolling窗口未满的前rolling_w-1行
     ):
     """
     粗粒度特征 + 细粒度滚动的数据准备方法（滑动窗口版本）
@@ -1205,6 +1206,7 @@ def data_prepare_coarse_grain_rolling(
     - feature_lookback_bars: 特征回溯的粗粒度桶数量（如8表示8个2h桶）
     - rolling_step: 滚动步长，如 '15min', '10min', '5min'
     - y_train_ret_period: 预测周期数（以rolling_step为单位）
+    - remove_warmup_rows: 是否删除rolling窗口未满的前rolling_w-1行（默认False保留所有数据）
     
     示例场景（滑动窗口）：
     - coarse_grain_period='2h', feature_lookback_bars=8, rolling_step='15min'
@@ -1488,14 +1490,29 @@ def data_prepare_coarse_grain_rolling(
     #  return_f = np.log(t_future_price / t_price)
     #  
 
-    # df_samples['ret_rolling_zscore'] = norm_ret(df_samples['return_f'].values, window=norm_window)
-    df_samples['ret_rolling_zscore'] = norm(df_samples['return_p'].values, window=rolling_w, clip=6)
+    df_samples['ret_rolling_zscore'] = norm_ret(df_samples['return_f'].values, window=rolling_w)
+    # df_samples['ret_rolling_zscore'] = norm(df_samples['return_p'].values, window=rolling_w, clip=6)
     # df_samples['return_f'] = df_samples['ret_rolling_zscore']
     
     print(f"✓ 使用 norm(window={rolling_w}) 进行标准化")
     # df_samples['ret_rolling_zscore'] = norm(df_samples['return_f'].values, window = 200, clip = 6)
     # df_samples['ret_rolling_zscore'] = norm_ret(df_samples['return_f'].values)
     
+    # ========== 删除rolling窗口未满的行（可选） ==========
+    # 此时，所有的features和label，都用相同窗口做完了rolling处理
+    # 为了训练模型的准确性，可以删除掉还没有存满窗口的那些行
+    
+    # 方案：在分割训练集/测试集之前删除这些行
+    # 这样所有后续的数据（X_all, X_train, X_test, ohlc_aligned等）都会基于清理后的df_samples
+    # 保证了数据的一致性
+    
+    if remove_warmup_rows and len(df_samples) > rolling_w:
+        print(f"\n⚠️  删除前 {rolling_w-1} 行（rolling窗口预热期）")
+        original_len = len(df_samples)
+        df_samples = df_samples.iloc[rolling_w:]
+        print(f"   数据行数: {original_len} → {len(df_samples)}")
+        print(f"   新的时间范围: {df_samples.index.min()} 至 {df_samples.index.max()}")
+
     print(f"\n标签统计:")
     print(f"return_f - 偏度: {df_samples['return_f'].skew():.4f}, 峰度: {df_samples['return_f'].kurtosis():.4f}")
     print(f"ret_rolling_zscore - 偏度: {df_samples['ret_rolling_zscore'].skew():.4f}, 峰度: {df_samples['ret_rolling_zscore'].kurtosis():.4f}")
