@@ -1571,6 +1571,22 @@ def data_prepare_coarse_grain_rolling(
         'close': df_samples['t_price']  # 兼容性别名
     }, index=df_samples.index)
     
+    print('检查x all是不是等于 x train和y train相加，再检查trian和test以及close和open的形状是否一致')
+    # X_all 专门是为做batch prediction的时候，要用X_all生成test集要用到的factor_df, 因为factor的计算需要之前一段window中的feature值
+    print(f'检查X_all的形状 {X_all.shape}')
+    print(f'检查x dataset train的形状 {X_train.shape}')
+    print(f'检查y dataset train的形状 {y_train.shape}')
+    print(f'检查x all是不是等于train和test相加 {len(X_all)},{len(X_test)+len(X_train)}')
+    print(f'检查open train的形状 {open_train.shape}')
+    print(f'检查close train的形状 {close_train.shape}')
+    print(f'检查x dataset test的形状 {X_test.shape}')
+    print(f'检查y dataset test的形状 {y_test.shape}')
+    print(f'检查open test的形状 {open_test.shape}')
+    print(f'检查close test的形状 {close_test.shape}')
+    print(f'检查ohlc_aligned的形状 {ohlc_aligned.shape}')
+    print(f'检查y_p_train_origin的形状 {y_p_train_origin.shape}')
+    print(f'检查y_p_test_origin的形状 {y_p_test_origin.shape}')
+
     # 返回接口与 data_prepare 保持一致
     return (X_all, X_train, y_train, ret_train, X_test, y_test, ret_test,
             feature_names, open_train, open_test, close_train, close_test,
