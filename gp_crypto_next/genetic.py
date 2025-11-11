@@ -752,7 +752,9 @@ class BaseSymbolic(BaseEstimator, metaclass=ABCMeta):
         # 遍历self._programs，把每一代保留下来的因子都一起汇总，与最新一代共同组成一个大的因子集合，并且包括out_of_parent_tops
         all_programs = [] + out_of_parent_tops
 
-        for gen in range(self.generations):
+        # 修改
+        # for gen in range(self.generations):
+        for gen in range(len(self._programs)):
             # for idx in range(len(self._programs[gen])):
             #     if self._programs[gen][idx] is not None:
             #         print(f'Gen: {gen}, idx: {idx}, fitness: {self._programs[gen][idx].raw_fitness_}')
