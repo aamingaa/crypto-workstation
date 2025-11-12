@@ -354,7 +354,26 @@ class GPAnalyzer:
         evaluator = FeatureEvaluator(_function_map, self.feature_names, self.X_all)
 
         result = evaluator.evaluate(factor_expression)  # 解析因子
-        result = np.nan_to_num(result)
+        
+        # # 调试：检查 NaN/inf 和结果统计
+        # if isinstance(result, np.ndarray):
+        #     nan_count = np.isnan(result).sum()
+        #     inf_count = np.isinf(result).sum()
+        #     zero_count = (result == 0).sum()
+        #     total_count = len(result)
+            
+        #     if nan_count > 0 or inf_count > 0 or zero_count > total_count * 0.5:
+        #         print(f"⚠️  因子计算结果异常统计:")
+        #         print(f"   总样本数: {total_count}")
+        #         print(f"   NaN数量: {nan_count} ({nan_count/total_count*100:.2f}%)")
+        #         print(f"   Inf数量: {inf_count} ({inf_count/total_count*100:.2f}%)")
+        #         print(f"   零值数量: {zero_count} ({zero_count/total_count*100:.2f}%)")
+        #         print(f"   非零值统计: min={np.nanmin(result[result!=0]) if (result!=0).any() else 'N/A'}, "
+        #               f"max={np.nanmax(result[result!=0]) if (result!=0).any() else 'N/A'}, "
+        #               f"mean={np.nanmean(result[result!=0]) if (result!=0).any() else 'N/A'}")
+        #         print(f"   因子表达式: {factor_expression[:100]}...")
+        
+        # result = np.nan_to_num(result)
         
         # 调试：检查长度
         expected_len = len(self.y_train) + len(self.y_test)
@@ -371,6 +390,10 @@ class GPAnalyzer:
         if metric in norm_y_list :
             fitness_train = fitness._fitness_map[metric](self.y_train, pd.Series(result_train), np.ones(len(self.y_train)))
             fitness_test = fitness._fitness_map[metric](self.y_test, pd.Series(result_test), np.ones(len(self.y_test)))
+            # if np.isnan(fitness_train) != True and fitness_train != 0 and np.isinf(fitness_train) != True:
+            #     print(f"metric={metric}, factor_expression={factor_expression},expression_fitness_train = {fitness_train}, factor_expression={factor_expression}")
+            #     fitness_test_v2 = fitness._fitness_map[metric](self.y_test, pd.Series(result_test), np.ones(len(self.y_test)))
+                
         else:
             fitness_train = fitness._fitness_map[metric](self.ret_train, pd.Series(result_train), np.ones(len(self.y_train)))
             fitness_test = fitness._fitness_map[metric](self.ret_test, pd.Series(result_test), np.ones(len(self.y_test)))
@@ -418,8 +441,7 @@ class GPAnalyzer:
         for metric in all_metrics:
             fitness_train, fitness_test = self.evaluate_single_factor(str(factor_expression), metric)
 
-            print(f"metric={metric}, expression_fitness_train = {fitness_train}")
-            print(f"metric={metric}, expression_fitness_test = {fitness_test}")
+            print(f"metric={metric}, factor_expression={factor_expression},expression_fitness_train = {fitness_train}, expression_fitness_test={fitness_test}")
 
             self.best_programs_df_dedup.loc[
                 self.best_programs_df_dedup['expression'] == factor_expression, f'fitness_{metric}_train'] = fitness_train

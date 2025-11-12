@@ -442,7 +442,7 @@ def _calculate_sharpe_ratio(y, y_pred, w, periods_per_year =times_per_year ):
     
     return sharp_ratio
 
-def _calculate_average_sharpe_ratio(y, y_pred, w, periods_per_year = times_per_year, n_chunk = 10):
+def _calculate_average_sharpe_ratio(y, y_pred, w, periods_per_year = times_per_year, n_chunk = 5):
     # 确保x和y长度相同
     y_pred = np.nan_to_num(y_pred).flatten()
     y = np.nan_to_num(y).flatten()

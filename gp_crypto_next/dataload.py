@@ -1491,7 +1491,7 @@ def data_prepare_coarse_grain_rolling(
     #  
 
     # df_samples['ret_rolling_zscore'] = norm_ret(df_samples['return_f'].values, window=rolling_w)
-    df_samples['ret_rolling_zscore'] = norm(df_samples['return_p'].values, window=rolling_w, clip=6)
+    df_samples['ret_rolling_zscore'] = norm(df_samples['return_f'].values, window=rolling_w, clip=6)
     remove_warmup_rows = True
     
     # df_samples['return_f'] = df_samples['ret_rolling_zscore']

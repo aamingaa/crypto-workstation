@@ -5,10 +5,10 @@ freq: 15m    # 指定数据频率（用于读取原始数据）
 
 sym: ETHUSDT    # 指定gplearn做训练的品种数据
 y_train_ret_period: 8    # 预测未来1个粗粒度周期的收益（1×2h=2小时）
-start_date_train: '2025-01-01'
-end_date_train: '2025-03-01'
-start_date_test: '2025-03-01'
-end_date_test: '2025-05-01'
+start_date_train: '2022-01-01'
+end_date_train: '2025-01-01'
+start_date_test: '2025-01-01'
+end_date_test: '2025-06-01'
 timeframe: '15m'
 # data_dir: '/Volumes/Ext-Disk/data/futures/um/monthly/klines/ETHUSDT/15m'
 data_dir: '/Users/aming/data/ETHUSDT/15m'
@@ -40,8 +40,8 @@ gp_settings:
   generations: 2
   tournament_size: 8
   const_range: null
-  init_depth: [2, 5]
-  metric: 'sharpe_fixed_threshold'  # 'avg_pic', 'avg_sic', 'sharp', 'calmar', 'sharpe_fixed_threshold', 'sharpe_std_threshold', rolling_rank_sic
+  init_depth: [1, 3]
+  metric: 'avg_sic'  # 'avg_pic', 'avg_sic', 'sharp', 'calmar', 'sharpe_fixed_threshold', 'sharpe_std_threshold', rolling_rank_sic
   parsimony_coefficient: 0.0005
   p_crossover: 0.8
   p_subtree_mutation: 0.02
@@ -60,7 +60,7 @@ gp_settings:
 #   tournament_size: 888
 #   const_range: null
 #   init_depth: [2, 5]
-#   metric: 'sharpe_fixed_threshold'  # 'avg_pic', 'avg_sic', 'sharp', 'calmar', 'sharpe_fixed_threshold', 'sharpe_std_threshold'
+#   metric: 'avg_sic'  # 'avg_pic', 'avg_sic', 'sharp', 'calmar', 'sharpe_fixed_threshold', 'sharpe_std_threshold'
 #   parsimony_coefficient: 0.0005
 #   p_crossover: 0.8
 #   p_subtree_mutation: 0.02

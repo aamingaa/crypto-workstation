@@ -106,6 +106,72 @@ class QuantTradingStrategy:
     """
     
     @classmethod
+    def from_yaml_with_expressions(cls, yaml_path, factor_expressions, strategy_config=None):
+        """
+        从YAML配置文件和因子表达式列表创建策略实例
+        
+        Args:
+            yaml_path (str): YAML配置文件路径
+            factor_expressions (list): 因子表达式列表，例如：
+                ['ta_cmo_25(ta_lr_angle_5(ta_dema_21(h_ta_lr_angle_10)))', ...]
+            strategy_config (dict, optional): 策略配置，会覆盖默认配置
+        
+        Returns:
+            QuantTradingStrategy: 策略实例
+        """
+        # 加载YAML配置
+        with open(yaml_path, 'r', encoding='utf-8') as f:
+            yaml_config = yaml.safe_load(f)
+        
+        # 构建data_config
+        data_config = {
+            'sym': yaml_config.get('sym', 'ETHUSDT'),
+            'freq': yaml_config.get('freq', '15m'),
+            'start_date_train': yaml_config.get('start_date_train'),
+            'end_date_train': yaml_config.get('end_date_train'),
+            'start_date_test': yaml_config.get('start_date_test'),
+            'end_date_test': yaml_config.get('end_date_test'),
+            'rolling_window': yaml_config.get('rolling_window', 2000),
+            'data_dir': yaml_config.get('data_dir', ''),
+            'read_frequency': yaml_config.get('read_frequency', 'monthly'),
+            'timeframe': yaml_config.get('timeframe', None),
+            'data_source': yaml_config.get('data_source', 'kline'),
+            # coarse_grain 相关参数
+            'coarse_grain_period': yaml_config.get('coarse_grain_period', '2h'),
+            'feature_lookback_bars': yaml_config.get('feature_lookback_bars', 8),
+            'rolling_step': yaml_config.get('rolling_step', '15min'),
+            'file_path': yaml_config.get('file_path', None),
+        }
+        
+        # 合并策略配置
+        config = {
+            'return_period': yaml_config.get('y_train_ret_period', 1),
+            'corr_threshold': 0.5,
+            'position_size': 1.0,
+            'clip_num': 5.0,
+            'fixed_return': 0.0,
+            'fees_rate': 0.0005,
+            'annual_bars': 365 * 24 * 4,  # 默认15分钟
+            'model_save_path': './models',
+            'max_factors': 30,
+        }
+        
+        # 如果提供了额外的策略配置，覆盖默认值
+        if strategy_config:
+            config.update(strategy_config)
+        
+        # 创建实例，不传入factor_csv_path
+        instance = cls(None, data_config, config)
+        
+        # 直接设置因子表达式
+        instance.factor_expressions = factor_expressions
+        instance._use_expressions_mode = True  # 标记使用表达式模式
+        
+        print(f"已设置 {len(factor_expressions)} 个因子表达式")
+        
+        return instance
+    
+    @classmethod
     def from_yaml(cls, yaml_path, factor_csv_path=None, strategy_config=None):
         """
         从YAML配置文件创建策略实例
@@ -173,7 +239,7 @@ class QuantTradingStrategy:
         初始化策略
         
         Args:
-            factor_csv_path (str): GP生成的因子CSV文件路径
+            factor_csv_path (str or None): GP生成的因子CSV文件路径，如果为None则需要手动设置因子表达式
             data_config (dict): 数据加载配置（sym, freq, dates等）
             config (dict): 策略配置参数
         """
@@ -209,6 +275,9 @@ class QuantTradingStrategy:
         # 回测结果
         self.backtest_results = {}
         self.performance_metrics = None
+        
+        # 模式标记
+        self._use_expressions_mode = False  # 是否使用表达式模式（而非CSV文件）
         
         print(f"策略初始化完成")
     
@@ -307,6 +376,29 @@ class QuantTradingStrategy:
         except Exception as e:
             print(f"数据加载失败: {e}")
             raise
+    
+    def set_factor_expressions(self, factor_expressions):
+        """
+        直接设置因子表达式列表（手动模式）
+        
+        Args:
+            factor_expressions (list): 因子表达式列表
+        
+        Returns:
+            self: 返回自身以支持链式调用
+        """
+        if not isinstance(factor_expressions, list):
+            raise ValueError("factor_expressions 必须是列表类型")
+        
+        self.factor_expressions = factor_expressions
+        self._use_expressions_mode = True
+        
+        print(f"已设置 {len(factor_expressions)} 个因子表达式")
+        if factor_expressions:
+            example = factor_expressions[0]
+            print(f"示例因子: {example[:80] + '...' if len(example) > 80 else example}")
+        
+        return self
     
     def load_factor_expressions(self):
         """从CSV文件加载GP生成的因子表达式"""
@@ -1071,10 +1163,17 @@ class QuantTradingStrategy:
         print("开始运行完整的量化策略流程（整合GP因子）")
         print("="*60)
         
-        # 执行完整流程
-        (self.load_data_from_dataload()
-         .load_factor_expressions()
-         .evaluate_factor_expressions()
+        # 加载数据
+        self.load_data_from_dataload()
+        
+        # 如果不是表达式模式，需要从CSV加载因子表达式
+        if not self._use_expressions_mode:
+            self.load_factor_expressions()
+        else:
+            print(f"使用预设的 {len(self.factor_expressions)} 个因子表达式")
+        
+        # 执行剩余流程
+        (self.evaluate_factor_expressions()
          .normalize_factors()
          .select_factors()
          .prepare_training_data()
@@ -1095,29 +1194,98 @@ class QuantTradingStrategy:
 # 使用示例
 if __name__ == "__main__":
     # ========== 方式1: 从YAML配置文件创建（推荐） ==========
+    # yaml_path = 'gp_crypto_next/coarse_grain_parameters.yaml'
+    
+    # # 自动推断因子CSV文件名，或手动指定
+    # factor_csv_path = 'gp_models/ETHUSDT_15m_1_2025-01-01_2025-01-20_2025-01-20_2025-01-31.csv.gz'
+    
+    # # 可选：额外的策略配置（会覆盖默认值）
+    # strategy_config = {
+    #     'corr_threshold': 0.5,  # 因子去相关阈值
+    #     'max_factors': 10,  # 最多使用30个因子
+    #     'fees_rate': 0.0005,  # 手续费率
+    #     'model_save_path': './models',
+    # }
+    
+    # # 从YAML创建策略
+    # strategy = QuantTradingStrategy.from_yaml(
+    #     yaml_path=yaml_path,
+    #     factor_csv_path=factor_csv_path,
+    #     strategy_config=strategy_config
+    # )
+    
+    # # 运行完整流程
+    # # weight_method 可选: 'equal' (等权重) 或 'sharpe' (基于夏普比率)
+    # strategy.run_full_pipeline(weight_method='equal')
+    
+    
+    # ========== 方式2: 从YAML + 因子表达式列表创建（新方式，推荐用于直接指定因子） ==========
     yaml_path = 'gp_crypto_next/coarse_grain_parameters.yaml'
     
-    # 自动推断因子CSV文件名，或手动指定
-    factor_csv_path = 'gp_models/ETHUSDT_15m_1_2025-01-01_2025-01-20_2025-01-20_2025-01-31.csv.gz'
+    # 定义因子表达式列表
+    factor_expressions = [
+        'ta_cmo_25(ta_lr_angle_5(ta_dema_21(h_ta_lr_angle_10)))',
+        'ta_rsi_14(ta_lr_slope_10(close_macd))',
+        'ta_willr_25(ts_kurt_20(ta_lr_slope_5(ori_trix_8)))',
+        'ta_lr_intercept_5(ta_lr_intercept_20(TA_BOP(ta_willr_25(ts_kurt_20(ta_lr_slope_5(ori_trix_8))), ta_rsi_24(ta_atr_14(h_ta_lr_angle_10, close_macd, ori_trix_8)), sin(ta_tsf_20(c)), ta_rocp_25(ts_delta_8(o)), ts_min_20(o), ori_trix_21)))',
+        'sub(ta_dema_21(h_ta_lr_angle_10), ta_ema_20(c))',
+        # ... 可以添加更多因子表达式
+    ]
     
-    # 可选：额外的策略配置（会覆盖默认值）
+    # 策略配置
     strategy_config = {
         'corr_threshold': 0.5,  # 因子去相关阈值
-        'max_factors': 30,  # 最多使用30个因子
+        'max_factors': 10,  # 最多使用的因子数量
         'fees_rate': 0.0005,  # 手续费率
         'model_save_path': './models',
     }
     
-    # 从YAML创建策略
-    strategy = QuantTradingStrategy.from_yaml(
+    # 从YAML和因子表达式创建策略
+    strategy = QuantTradingStrategy.from_yaml_with_expressions(
         yaml_path=yaml_path,
-        factor_csv_path=factor_csv_path,
+        factor_expressions=factor_expressions,
         strategy_config=strategy_config
     )
     
     # 运行完整流程
-    # weight_method 可选: 'equal' (等权重) 或 'sharpe' (基于夏普比率)
     strategy.run_full_pipeline(weight_method='equal')
+    
+    
+    # ========== 方式3: 链式调用手动设置因子表达式 ==========
+    """
+    yaml_path = 'gp_crypto_next/coarse_grain_parameters.yaml'
+    
+    # 定义因子表达式列表
+    factor_expressions = [
+        'ta_cmo_25(ta_lr_angle_5(ta_dema_21(h_ta_lr_angle_10)))',
+        'ta_rsi_14(ta_lr_slope_10(close_macd))',
+        'ta_willr_25(ts_kurt_20(ta_lr_slope_5(ori_trix_8)))',
+        # ... 更多因子
+    ]
+    
+    # 策略配置
+    strategy_config = {
+        'corr_threshold': 0.5,
+        'max_factors': 10,
+        'fees_rate': 0.0005,
+        'model_save_path': './models',
+    }
+    
+    # 使用链式调用（更灵活）
+    strategy = (QuantTradingStrategy.from_yaml(yaml_path, None, strategy_config)
+                .set_factor_expressions(factor_expressions)
+                .load_data_from_dataload()
+                .evaluate_factor_expressions()
+                .normalize_factors()
+                .select_factors()
+                .prepare_training_data()
+                .train_models()
+                .make_predictions(weight_method='equal')
+                .backtest_all_models())
+    
+    # 显示绩效汇总
+    summary = strategy.get_performance_summary()
+    """
     
     # ========== 可选：使用 Triple Barrier 标注 ==========
     # 在数据加载后、模型训练前，可以生成 Triple Barrier 标签
